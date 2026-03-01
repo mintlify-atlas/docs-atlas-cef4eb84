@@ -1,0 +1,253 @@
+---
+title: ClerkService
+description: Clerk authentication integration and user management
+---
+
+# ClerkService
+
+The `ClerkService` provides integration with Clerk authentication, managing user sign-in, sign-out, and session token retrieval for Convex backend authentication.
+
+## Location
+
+```typescript
+src/app/services/clerk.service.ts
+```
+
+## Properties
+
+<ParamField path="clerk" type="Clerk">
+  The Clerk instance used for all authentication operations
+</ParamField>
+
+<ParamField path="loaded" type="signal<boolean>">
+  Signal indicating whether the Clerk SDK has finished loading
+</ParamField>
+
+<ParamField path="user" type="signal<any | null>">
+  Signal containing the current user object, or null if not authenticated
+</ParamField>
+
+## Initialization
+
+The service automatically initializes Clerk on construction:
+
+```typescript
+constructor() {
+  this.clerk = new Clerk(environment.clerkPublicKey);
+  this.init();
+}
+
+private async init() {
+  await this.clerk.load();
+  this.loaded.set(true);
+
+  this.clerk.addListener(() => {
+    this.user.set(this.clerk.user ?? null);
+  });
+}
+```
+
+This sets up:
+- Clerk SDK with the public key from environment config
+- Reactive user state via signals
+- Automatic updates when auth state changes
+
+## Methods
+
+### openSignIn()
+
+Opens the Clerk sign-in modal.
+
+```typescript
+async openSignIn(): Promise<void>
+```
+
+**Example:**
+```typescript
+async showLogin() {
+  await this.clerkService.openSignIn();
+}
+```
+
+### openSignUp()
+
+Opens the Clerk sign-up modal.
+
+```typescript
+async openSignUp(): Promise<void>
+```
+
+**Example:**
+```typescript
+async showRegister() {
+  await this.clerkService.openSignUp();
+}
+```
+
+### signOut()
+
+Signs the user out and clears the user state.
+
+```typescript
+async signOut(): Promise<void>
+```
+
+**Example:**
+```typescript
+async logout() {
+  await this.clerkService.signOut();
+  // User signal will automatically be set to null
+}
+```
+
+### getToken()
+
+Retrieves the current session token for authenticating with Convex.
+
+```typescript
+async getToken(options?: { template?: string; skipCache?: boolean }): Promise<string | null>
+```
+
+<ParamField path="options.template" type="string">
+  Optional JWT template name to use (e.g., "convex")
+</ParamField>
+
+<ParamField path="options.skipCache" type="boolean">
+  Whether to bypass the token cache and fetch a fresh token
+</ParamField>
+
+**Returns:** The JWT token string, or null if no active session
+
+**Example:**
+```typescript
+async getConvexToken() {
+  const token = await this.clerkService.getToken({ 
+    template: 'convex' 
+  });
+  return token;
+}
+```
+
+<Info>
+  The token is used by the Convex client to authenticate API requests. See the [Backend integration](/development/backend-integration) guide for details on the Convex + Clerk setup.
+</Info>
+
+### isLoaded()
+
+Waits for the Clerk SDK to finish loading.
+
+```typescript
+async isLoaded(): Promise<void>
+```
+
+**Example:**
+```typescript
+async ensureLoaded() {
+  await this.clerkService.isLoaded();
+  // Now safe to interact with Clerk
+}
+```
+
+## Usage in components
+
+### Check authentication status
+
+```typescript
+import { Component, inject } from '@angular/core';
+import { ClerkService } from '../services/clerk.service';
+
+@Component({
+  selector: 'app-navbar',
+  template: `
+    @if (user()) {
+      <button (click)="signOut()">Sign Out</button>
+      <span>{{ user()?.firstName }}</span>
+    } @else {
+      <button (click)="signIn()">Sign In</button>
+    }
+  `
+})
+export class Navbar {
+  private clerkService = inject(ClerkService);
+  
+  user = this.clerkService.user;
+  
+  async signIn() {
+    await this.clerkService.openSignIn();
+  }
+  
+  async signOut() {
+    await this.clerkService.signOut();
+  }
+}
+```
+
+### Wait for Clerk to load
+
+```typescript
+@Component({
+  selector: 'app-root',
+  template: `
+    @if (loaded()) {
+      <router-outlet />
+    } @else {
+      <div>Loading...</div>
+    }
+  `
+})
+export class App {
+  private clerkService = inject(ClerkService);
+  
+  loaded = this.clerkService.loaded;
+}
+```
+
+## Environment configuration
+
+The service requires the Clerk public key to be configured in the environment file:
+
+```typescript
+// src/environments/environment.development.ts
+export const environment = {
+  clerkPublicKey: 'pk_test_...',
+  // other config
+};
+```
+
+<Warning>
+  Make sure to use the correct Clerk public key for your environment. Use test keys for development and production keys for production builds.
+</Warning>
+
+## Integration with Convex
+
+The ClerkService works together with `ClerkAuthService` to provide authentication for Convex:
+
+1. User signs in via ClerkService
+2. ClerkService retrieves the JWT token
+3. ClerkAuthService passes the token to Convex client
+4. Convex validates the token and creates authenticated sessions
+
+See the [Backend integration](/development/backend-integration) page for the complete authentication flow.
+
+## Signal reactivity
+
+Both `loaded` and `user` are Angular signals, making them fully reactive:
+
+```typescript
+// In template - automatically updates when state changes
+{{ user()?.firstName }}
+
+// In component - use computed for derived state
+isAdmin = computed(() => 
+  this.clerkService.user()?.publicMetadata?.role === 'admin'
+);
+```
+
+## Related services
+
+- **[ClerkAuthService](/development/backend-integration#clerkauth-service)** - Integrates Clerk tokens with Convex
+- **[StoreUserService](/development/backend-integration#user-persistence)** - Creates user records in Convex database
+
+<Note>
+  The ClerkService handles the client-side authentication UI and state, while ClerkAuthService bridges Clerk with the Convex backend.
+</Note>

@@ -1,0 +1,156 @@
+---
+title: MilestoneService
+description: Manages milestone state and localStorage persistence
+---
+
+# MilestoneService
+
+The `MilestoneService` manages the milestone achievement system, storing milestone data in the browser's localStorage for persistence across sessions.
+
+## Location
+
+```typescript
+src/app/services/milestone-service.ts
+```
+
+## Properties
+
+<ParamField path="milestones" type="signal<Milestone[]>">
+  Signal containing the array of all milestones. Reactive and automatically persists changes to localStorage.
+</ParamField>
+
+## Automatic persistence
+
+The service uses an Angular effect to automatically save milestone data to localStorage whenever the milestones signal changes:
+
+```typescript
+constructor() {
+  effect(() => {
+    localStorage.setItem('milestones', JSON.stringify(this.milestones()));
+  });
+}
+```
+
+This ensures that:
+- All milestone changes are immediately persisted
+- No manual save calls are needed
+- Data survives page refreshes and browser restarts
+
+## Data loading
+
+On initialization, the service automatically loads saved milestone data:
+
+```typescript
+private loadMilestones(): Milestone[] {
+  const saved = localStorage.getItem('milestones');
+  if (saved) {
+    return JSON.parse(saved);
+  }
+  return [];
+}
+```
+
+## Usage example
+
+```typescript
+import { Component, inject } from '@angular/core';
+import { MilestoneService } from '../services/milestone-service';
+
+@Component({
+  selector: 'app-milestones',
+  template: `
+    <div *ngFor="let milestone of milestones()">
+      <h3>{{ milestone.type }} - Level {{ milestone.level }}</h3>
+      <p>{{ milestone.requirement }}</p>
+      <button 
+        *ngIf="!milestone.achieved"
+        (click)="claimMilestone(milestone)">
+        Claim +{{ milestone.reward }} cores
+      </button>
+    </div>
+  `
+})
+export class MilestonesPage {
+  private milestoneService = inject(MilestoneService);
+  
+  milestones = this.milestoneService.milestones;
+  
+  claimMilestone(milestone: Milestone) {
+    // Mark milestone as achieved
+    this.milestoneService.milestones.update(milestones =>
+      milestones.map(m =>
+        m.id === milestone.id
+          ? { ...m, achieved: true, achievedAt: new Date() }
+          : m
+      )
+    );
+  }
+}
+```
+
+## Milestone interface
+
+The service works with the `Milestone` interface:
+
+```typescript
+export interface Milestone {
+  id: string;
+  type: 'Strength' | 'Intelligence' | 'Endurance';
+  requirement: string;
+  reward: number;
+  achieved: boolean;
+  achievedAt?: Date;
+  level: number;
+}
+```
+
+See the [Milestone model](/api/models/milestone) documentation for complete details.
+
+## localStorage vs Convex
+
+<Info>
+  Milestones are stored in **localStorage**, not in the Convex database like character data and upgrades. This is a simpler persistence approach suitable for milestone tracking.
+</Info>
+
+**Advantages:**
+- Instant reads and writes (no network latency)
+- No database API calls needed
+- Simpler implementation
+
+**Limitations:**
+- Data is browser-specific (won't sync across devices)
+- Cleared if user clears browser data
+- Not suitable for competitive/multiplayer features
+
+<Note>
+  If cross-device milestone syncing is needed in the future, the service could be extended to also sync with Convex while keeping localStorage as a cache.
+</Note>
+
+## Signal reactivity
+
+The `milestones` property is a signal, making it fully reactive with Angular's new signal-based reactivity system:
+
+```typescript
+// Reading the current value
+const allMilestones = this.milestoneService.milestones();
+
+// Updating the array
+this.milestoneService.milestones.update(current => [...current, newMilestone]);
+
+// Replacing the entire array
+this.milestoneService.milestones.set(newMilestoneArray);
+```
+
+Components that read the signal will automatically re-render when the data changes.
+
+## Related documentation
+
+- **[Milestone model](/api/models/milestone)** - Complete interface definition
+- **[Milestones mechanics](/mechanics/milestones)** - Game mechanics and milestone types
+- **[CharacterService](/api/services/character-service)** - Provides stat values for milestone checking
+
+## Current implementation status
+
+<Warning>
+  The milestone system is currently in a basic state. While the service and data model exist, milestone checking and awarding logic is not yet fully integrated into the game loop. See the [Milestones mechanics](/mechanics/milestones) page for details on the planned implementation.
+</Warning>

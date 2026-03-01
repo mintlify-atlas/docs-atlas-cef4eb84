@@ -1,0 +1,143 @@
+---
+title: AutoSaveService
+description: Automatic game state persistence to Convex database
+---
+
+# AutoSaveService
+
+The `AutoSaveService` automatically saves the game state to the Convex database at regular intervals. It monitors for changes and only persists data when the state has been modified, reducing unnecessary database writes.
+
+## Location
+
+```typescript
+src/app/services/autosave-service.ts
+```
+
+## Properties
+
+<ParamField path="AUTO_SAVE_INTERVAL" type="number" default="300000">
+  Time between auto-save checks in milliseconds (5 minutes = 300000ms)
+</ParamField>
+
+<ParamField path="autoSaveHasStarted" type="boolean" default="false">
+  Internal flag tracking whether auto-save has been initialized
+</ParamField>
+
+<ParamField path="lastSavedGameState" type="GameState | undefined">
+  Cached copy of the last saved state used for change detection
+</ParamField>
+
+## Methods
+
+### startAutoSave()
+
+Begins the automatic save process. Sets up an interval that checks for state changes and saves when needed.
+
+```typescript
+startAutoSave(): void
+```
+
+**Example:**
+```typescript
+constructor(private autoSaveService: AutoSaveService) {
+  // Auto-save starts automatically when character data loads
+}
+```
+
+<Note>
+  The service automatically calls `startAutoSave()` once the character data has been loaded from the database. You typically don't need to call this manually.
+</Note>
+
+### checkAndSave()
+
+Compares the current game state with the last saved state and triggers a database update if changes are detected.
+
+```typescript
+checkAndSave(): void
+```
+
+**Implementation:**
+```typescript
+checkAndSave() {
+  const currentGameState = this.GameStateService.getState();
+
+  if (JSON.stringify(currentGameState) !== JSON.stringify(this.lastSavedGameState)) {
+    this.GameStateService.pushUpdatesToDatabase();
+    this.lastSavedGameState = currentGameState;
+  }
+}
+```
+
+<Info>
+  Change detection uses JSON string comparison. This is simple but effective for the game's data structure.
+</Info>
+
+### stopAutoSave()
+
+Stops the automatic save interval. Called when the application component is destroyed.
+
+```typescript
+stopAutoSave(): void
+```
+
+**Example:**
+```typescript
+ngOnDestroy() {
+  this.autoSaveService.stopAutoSave();
+}
+```
+
+## Automatic initialization
+
+The service uses an Angular effect to automatically start auto-saving once the character data is loaded from the database:
+
+```typescript
+constructor(private GameStateService: GameStateService) {
+  effect(() => {
+    if (this.autoSaveHasStarted) return;
+    if (this.GameStateService.characterService.hasLoadedFromDb()) {
+      this.startAutoSave();
+      this.autoSaveHasStarted = true;
+    }
+  });
+}
+```
+
+This ensures that:
+- Auto-save only starts after data is loaded from the database
+- It only initializes once per session
+- No saves occur before the initial data load completes
+
+## Save frequency
+
+The default save interval is 5 minutes (300,000 milliseconds). This balances data persistence with server load:
+
+- **Too frequent**: Increases database operations and API costs
+- **Too infrequent**: Increases risk of data loss on unexpected exits
+
+<Tip>
+  The interval can be adjusted by modifying the `AUTO_SAVE_INTERVAL` property if you need more or less frequent saves during development.
+</Tip>
+
+## GameState interface
+
+The service works with the `GameState` interface defined in the file:
+
+```typescript
+export interface GameState {
+  goldUpgrades: Upgrade[];
+  prestigeUpgrades: Upgrade[];
+  character: Character;
+}
+```
+
+This represents all the data that needs to be persisted across sessions.
+
+## Related services
+
+- **[GameStateService](/api/services/gamestate-service)** - Aggregates state and coordinates database updates
+- **[CharacterService](/api/services/character-service)** - Manages character data and provides the loaded state signal
+
+<Warning>
+  Make sure to call `stopAutoSave()` in your root component's `ngOnDestroy` hook to prevent memory leaks from the interval timer.
+</Warning>

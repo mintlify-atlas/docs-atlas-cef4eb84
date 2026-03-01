@@ -62,7 +62,10 @@
               "api/services/combat-service",
               "api/services/prestige-service",
               "api/services/upgrade-services",
-              "api/services/gamestate-service"
+              "api/services/gamestate-service",
+              "api/services/autosave-service",
+              "api/services/milestone-service",
+              "api/services/clerk-service"
             ]
           },
           {
