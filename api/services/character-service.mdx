@@ -1,0 +1,220 @@
+---
+title: CharacterService
+description: Core service managing character state, stats, progression, and database synchronization
+---
+
+## Overview
+
+The `CharacterService` manages the player's character state using Angular signals and integrates with Convex for real-time database synchronization. It handles character stats, progression through stages and waves, and persists prestige-related progress.
+
+## Properties
+
+### character
+
+```typescript
+character: WritableSignal<Character>
+```
+
+Reactive signal containing the current character state. Updates trigger automatic UI re-renders.
+
+### hasLoadedFromDb
+
+```typescript
+hasLoadedFromDb: Signal<boolean>
+```
+
+Indicates whether the initial character data has been loaded from the database.
+
+## Methods
+
+### updateDatabase
+
+```typescript
+public updateDatabase(): void
+```
+
+Persists the current character state to the database. Only saves essential fields:
+
+- `id` - Character identifier
+- `prestigeLevel` - Current prestige level
+- `prestigeMultipliers` - Stat multipliers from prestige
+- `prestigeCores` - Available prestige currency
+- `gold` - Current gold amount
+- `currentStage` - Current stage number
+- `currentWave` - Current wave within stage
+
+**Usage:**
+
+```typescript
+characterService.updateDatabase();
+```
+
+<Note>
+This method is typically called by `GameStateService.pushUpdatesToDatabase()` rather than directly.
+</Note>
+
+### resetCharacter
+
+```typescript
+resetCharacter(): void
+```
+
+Resets the character to base stats while preserving prestige progress. Called during prestige operations.
+
+**Preserved values:**
+- `prestigeLevel`
+- `prestigeMultipliers`
+- `prestigeCores`
+- `gold`
+
+**Reset values:**
+- `level` → 1
+- All base stats → 1
+- All stat modifiers → 1
+- `currentStage` → 1
+- `currentWave` → 1
+
+**Usage:**
+
+```typescript
+// Called during prestige
+characterService.resetCharacter();
+```
+
+<Warning>
+This method permanently resets character stats. Always call during prestige operations only.
+</Warning>
+
+### advanceWave
+
+```typescript
+advanceWave(): void
+```
+
+Progresses the character to the next wave or stage. Increments wave number (1-10), and advances to the next stage when completing wave 10.
+
+**Logic:**
+- If current wave < 10: increment wave
+- If current wave = 10: reset wave to 1 and increment stage
+
+**Usage:**
+
+```typescript
+// Called after defeating an enemy
+characterService.advanceWave();
+```
+
+### modifyStat
+
+```typescript
+modifyStat(
+  stat: keyof Pick<
+    Character,
+    'level' | 'baseStrength' | 'baseIntelligence' | 'baseEndurance' | 'gold' | 'prestigeLevel' | 'prestigeCores'
+  >,
+  amount: number
+): void
+```
+
+Modifies a character stat by the specified amount. Prevents negative values.
+
+<ParamField path="stat" type="string" required>
+  The stat to modify. Valid values: `'level'`, `'baseStrength'`, `'baseIntelligence'`, `'baseEndurance'`, `'gold'`, `'prestigeLevel'`, `'prestigeCores'`
+</ParamField>
+
+<ParamField path="amount" type="number" required>
+  The amount to add (positive) or subtract (negative) from the stat
+</ParamField>
+
+**Usage:**
+
+```typescript
+// Add 100 gold
+characterService.modifyStat('gold', 100);
+
+// Add 5 strength
+characterService.modifyStat('baseStrength', 5);
+
+// Add prestige cores
+characterService.modifyStat('prestigeCores', 10);
+```
+
+<Info>
+If the resulting value would be negative, the stat is not modified.
+</Info>
+
+### spendPrestigeCores
+
+```typescript
+spendPrestigeCores(cost: number): void
+```
+
+Deducts prestige cores from the character. Used when purchasing prestige upgrades.
+
+<ParamField path="cost" type="number" required>
+  The number of prestige cores to spend
+</ParamField>
+
+**Usage:**
+
+```typescript
+characterService.spendPrestigeCores(5);
+```
+
+<Warning>
+This method does not validate if the character has enough prestige cores. Always check availability before calling.
+</Warning>
+
+### spendGold
+
+```typescript
+spendGold(cost: number): void
+```
+
+Deducts gold from the character. Used when purchasing gold upgrades.
+
+<ParamField path="cost" type="number" required>
+  The amount of gold to spend
+</ParamField>
+
+**Usage:**
+
+```typescript
+characterService.spendGold(150);
+```
+
+<Warning>
+This method does not validate if the character has enough gold. Always check availability before calling.
+</Warning>
+
+## Database Integration
+
+The service uses Convex queries and mutations for real-time synchronization:
+
+```typescript
+private getCharacterFromDatabase = injectQuery(api.character.getCharacter, () => ({}));
+private databaseUpdateMutation = injectMutation(api.character.updateCharacter);
+```
+
+Character data is automatically loaded on initialization and merged with default values using an effect:
+
+```typescript
+effect(() => {
+  const dbCharacter = this.getCharacterFromDatabase.data();
+  if (!dbCharacter) return;
+  
+  if (this.hasLoadedFromDb()) {
+    // Merge updates after initial load
+    this.character.update((char) => ({ ...char, ...dbCharacter }));
+  } else {
+    // Initial load: merge with defaults
+    const merged = { ...defaultCharacter, ...dbCharacter };
+    this.character.set(merged);
+    this.hasLoadedFromDb.set(true);
+  }
+});
+```
+
+## Related Types
+
+See the [Character model](/api/models/character) for the complete `Character` interface definition.

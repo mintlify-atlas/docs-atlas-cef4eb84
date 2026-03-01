@@ -1,0 +1,344 @@
+---
+title: CombatService
+description: Handles combat mechanics, damage calculations, enemy progression, and special abilities
+---
+
+## Overview
+
+The `CombatService` orchestrates all combat-related functionality including attack timing, damage calculations, critical hits, enemy health scaling, and reward distribution. It integrates with character stats, upgrade effects, and progression systems.
+
+## Properties
+
+### isFighting
+
+```typescript
+isFighting: Signal<boolean>
+```
+
+Indicates whether the character is currently in combat.
+
+### enemyHP
+
+```typescript
+enemyHP: Signal<number>
+```
+
+The current enemy's remaining hit points.
+
+### isSwiftAttacking
+
+```typescript
+isSwiftAttacking: Signal<boolean>
+```
+
+Indicates whether the Swift Attack skill is currently active.
+
+### SWIFT_ATTACK_DURATION
+
+```typescript
+SWIFT_ATTACK_DURATION: number = 5000
+```
+
+Duration of the Swift Attack skill effect in milliseconds (5 seconds).
+
+## Combat Control Methods
+
+### startFighting
+
+```typescript
+startFighting(): void
+```
+
+Initiates combat by setting `isFighting` to true and starting the attack loop. Automatically schedules the next attack based on attack speed.
+
+**Usage:**
+
+```typescript
+combatService.startFighting();
+```
+
+<Info>
+The attack loop continues automatically until `stopFighting()` is called.
+</Info>
+
+### stopFighting
+
+```typescript
+stopFighting(): void
+```
+
+Halts combat by setting `isFighting` to false and clearing the attack interval.
+
+**Usage:**
+
+```typescript
+combatService.stopFighting();
+```
+
+### performAttack
+
+```typescript
+performAttack(): void
+```
+
+Executes a single attack against the current enemy. Calculates damage (including critical hit chance), reduces enemy HP, and handles enemy defeat.
+
+**Logic:**
+1. Calculate base damage using `calculateDamage()`
+2. Check for critical hit using `criticalHit()`
+3. Apply critical damage multiplier if applicable: `damage * (2 + criticalDamageBoost)`
+4. Reduce enemy HP (minimum 0)
+5. Call `handleEnemyDefeat()` if HP reaches 0
+
+**Usage:**
+
+```typescript
+// Called automatically during combat
+combatService.performAttack();
+```
+
+### handleEnemyDefeat
+
+```typescript
+handleEnemyDefeat(): void
+```
+
+Processes enemy defeat by awarding gold, advancing to the next wave, and spawning a new enemy.
+
+**Actions:**
+1. Calculate and award gold reward
+2. Advance wave/stage
+3. Recalculate enemy HP for new enemy
+
+**Usage:**
+
+```typescript
+// Called automatically when enemy HP reaches 0
+```
+
+## Damage & Attack Calculations
+
+### calculateDamage
+
+```typescript
+calculateDamage(): number
+```
+
+Calculates the character's attack damage based on stats, upgrades, and prestige bonuses.
+
+**Formula:**
+```typescript
+let damage = (baseStrength + flatStatBoost) 
+  * strengthModifier 
+  * prestigeStrengthMultiplier 
+  * prestigeLevel;
+
+// Apply prestige upgrade boosts
+damage *= (1 + prestigeFlatStatBoost);
+
+// Apply per-core DPS boost
+damage *= (1 + dpsPerCore * unusedPrestigeCores);
+
+return Math.floor(damage);
+```
+
+**Returns:** The final damage value (floored to integer)
+
+**Usage:**
+
+```typescript
+const damage = combatService.calculateDamage();
+```
+
+<Info>
+Damage scales with:
+- Base character strength
+- Gold upgrade flat stat boosts
+- Prestige multipliers and level
+- Prestige upgrade effects
+- Unused prestige cores (with "Hoarded Power" upgrade)
+</Info>
+
+### calculateAttackSpeed
+
+```typescript
+calculateAttackSpeed(): number
+```
+
+Calculates the delay between attacks in milliseconds.
+
+**Formula:**
+```typescript
+const BASE_ATTACK_SPEED = 1000; // 1 second
+const swiftMultiplier = isSwiftAttacking ? 0.5 : 1;
+const speed = BASE_ATTACK_SPEED * (1 - attackSpeedBoost) * swiftMultiplier;
+return Math.floor(speed);
+```
+
+**Returns:** Attack interval in milliseconds
+
+**Usage:**
+
+```typescript
+const attackInterval = combatService.calculateAttackSpeed();
+```
+
+<Note>
+- Base attack speed is 1000ms (1 attack per second)
+- Attack speed upgrades reduce this interval
+- Swift Attack skill applies 50% speed boost (0.5x multiplier)
+</Note>
+
+### criticalHit
+
+```typescript
+criticalHit(): boolean
+```
+
+Determines if an attack is a critical hit using random chance.
+
+**Formula:**
+```typescript
+const critChance = 0.1 + goldUpgradeCritBoost; // Base 10% + upgrades
+return Math.random() < critChance;
+```
+
+**Returns:** `true` if the attack is a critical hit
+
+**Usage:**
+
+```typescript
+if (combatService.criticalHit()) {
+  // Apply critical damage multiplier
+}
+```
+
+## Enemy Calculations
+
+### calculateEnemyHP
+
+```typescript
+calculateEnemyHP(): number
+```
+
+Calculates enemy health based on current stage, wave, and prestige upgrade effects.
+
+**Formula:**
+```typescript
+const baseHP = 100;
+const stageMultiplier = Math.pow(1.5, currentStage - 1);
+const waveMultiplier = Math.pow(1.05, currentWave - 1);
+
+let enemyHP = baseHP * stageMultiplier * waveMultiplier;
+
+// Apply health reduction from prestige upgrades
+enemyHP *= (1 - enemyHealthReduction);
+
+return Math.floor(enemyHP);
+```
+
+**Scaling:**
+- **Stage**: Exponential growth with 1.5x multiplier per stage
+- **Wave**: Exponential growth with 1.05x multiplier per wave
+- **Prestige upgrades**: "Fragile Foes" reduces enemy HP by 5% per level
+
+**Returns:** Calculated enemy HP (floored to integer)
+
+**Usage:**
+
+```typescript
+const newEnemyHP = combatService.calculateEnemyHP();
+```
+
+### calculateGoldReward
+
+```typescript
+calculateGoldReward(): number
+```
+
+Calculates the gold reward for defeating an enemy.
+
+**Formula:**
+```typescript
+const baseGold = 10 * currentStage;
+const waveBonusGold = 1 + (currentWave * 0.05);
+
+let gold = baseGold * waveBonusGold;
+
+// 10% chance for double gold (critical)
+if (Math.random() < 0.1) {
+  gold *= 2;
+}
+
+return Math.floor(gold);
+```
+
+**Returns:** Gold amount awarded (floored to integer)
+
+**Usage:**
+
+```typescript
+// Called automatically when enemy is defeated
+```
+
+<Note>
+Gold rewards scale with:
+- Stage number (10 gold base per stage)
+- Wave number (5% bonus per wave)
+- 10% chance for critical gold (2x reward)
+</Note>
+
+## Special Abilities
+
+### useSwiftAttackSkill
+
+```typescript
+useSwiftAttackSkill(): void
+```
+
+Activates the Swift Attack skill, which doubles attack speed for 5 seconds. Resets the duration if already active.
+
+**Effect:**
+- Reduces attack interval by 50%
+- Duration: 5000ms (5 seconds)
+- Can be refreshed while active
+
+**Usage:**
+
+```typescript
+combatService.useSwiftAttackSkill();
+```
+
+<Info>
+The Swift Attack skill is implemented as a 0.5x multiplier on attack speed, effectively doubling the attack rate.
+</Info>
+
+## Dependencies
+
+The service injects and uses:
+
+- **CharacterService** - Access to character stats and progression
+- **PrestigeUpgradeService** - Prestige upgrade effect calculations
+- **GoldUpgradeService** - Gold upgrade effect calculations
+
+```typescript
+characterService = inject(CharacterService);
+prestigeUpgradeService = inject(PrestigeUpgradeService);
+goldUpgradeService = inject(GoldUpgradeService);
+```
+
+## Combat Loop Architecture
+
+The combat system uses recursive timeouts for flexible timing:
+
+```typescript
+startFighting() {
+  this.isFighting.set(true);
+  this.performAttack();
+  this.fightIntervalID = setTimeout(() => {
+    this.startFighting();
+  }, this.calculateAttackSpeed());
+}
+```
+
+This allows attack speed to be recalculated dynamically between attacks, reflecting real-time upgrade effects.

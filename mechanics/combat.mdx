@@ -1,0 +1,264 @@
+---
+title: Combat system
+description: Learn how Kaizen's combat mechanics work, including damage calculation, enemy scaling, and attack speed
+---
+
+The combat system in Kaizen handles automatic fighting, damage calculation, critical hits, and enemy progression through waves and stages.
+
+## Starting and stopping combat
+
+Combat is controlled through the `CombatService` and operates on an automatic interval-based system.
+
+```typescript
+startFighting() {
+  this.isFighting.set(true);
+  this.performAttack();
+  this.fightIntervalID = setTimeout(() => {
+    this.startFighting();
+  }, this.calculateAttackSpeed());
+}
+
+stopFighting() {
+  this.isFighting.set(false);
+  clearTimeout(this.fightIntervalID);
+}
+```
+
+<Info>
+The combat system uses `setTimeout` for attack intervals, which recalculates the attack speed after each attack to account for upgrades and buffs.
+</Info>
+
+## Damage calculation
+
+Damage is calculated using a multi-layered formula that combines base stats, modifiers, prestige bonuses, and upgrades.
+
+### Base damage formula
+
+The core damage calculation from `CombatService.calculateDamage()` (line 89):
+
+```typescript
+let damage =
+  (character.baseStrength +
+    this.goldUpgradeService.getTotalEffect(UpgradeEffectType.FLAT_STAT_BOOST)) *
+  character.strengthModifier *
+  character.prestigeMultipliers.strength *
+  character.prestigeLevel;
+```
+
+### Damage multipliers
+
+After the base calculation, additional multipliers are applied:
+
+<Accordion title="Prestige strength boost">
+```typescript
+const strengthBoost = this.prestigeUpgradeService.getTotalEffect(
+  UpgradeEffectType.FLAT_STAT_BOOST
+);
+damage *= 1 + strengthBoost;
+```
+
+This additive multiplier comes from prestige upgrades like "Titan's Power".
+</Accordion>
+
+<Accordion title="Dynamic per-core scaling">
+```typescript
+const dpsPerCore = this.prestigeUpgradeService.getTotalEffect(
+  UpgradeEffectType.DYNAMIC_PER_CORE
+);
+const unusedCores = character.prestigeCores;
+damage *= 1 + dpsPerCore * unusedCores;
+```
+
+The "Hoarded Power" upgrade grants 2% DPS per unused prestige core, rewarding players who save cores.
+</Accordion>
+
+<Note>
+Final damage is floored to the nearest integer: `Math.floor(damage)`
+</Note>
+
+## Critical hits
+
+Critical hits can occur on any attack and multiply the final damage.
+
+### Critical chance
+
+Base critical chance starts at 10% and can be increased through gold upgrades:
+
+```typescript
+criticalHit() {
+  const criticalChance =
+    0.1 + this.goldUpgradeService.getTotalEffect(UpgradeEffectType.CRITICAL_CHANCE_BOOST);
+  return Math.random() < criticalChance;
+}
+```
+
+The "KaaChow Statue" gold upgrade adds +1% critical chance per level.
+
+### Critical damage
+
+When a critical hit occurs, damage is multiplied:
+
+```typescript
+if (this.criticalHit()) {
+  attackAmount *=
+    2 + this.goldUpgradeService.getTotalEffect(UpgradeEffectType.CRITICAL_DAMAGE_BOOST);
+}
+```
+
+<Tip>
+Base critical damage is 2x (200%). The "Heavy Hitter" upgrade adds +5% per level, so at level 10 you'd have 2.5x critical damage.
+</Tip>
+
+## Attack speed
+
+Attack speed determines the interval between automatic attacks.
+
+### Base attack speed formula
+
+```typescript
+calculateAttackSpeed(): number {
+  const BASE_ATTACK_SPEED = 1000;
+  const SWIFT_ATTACK_SKILL_BOOST = 0.5;
+  const attackSpeedBoost = this.prestigeUpgradeService.getTotalEffect(
+    UpgradeEffectType.ATTACK_SPEED
+  );
+  const swiftAttackSkill = this.isSwiftAttacking() ? SWIFT_ATTACK_SKILL_BOOST : 1;
+  const finalAttackSpeed = Math.floor(
+    BASE_ATTACK_SPEED * (1 - attackSpeedBoost) * swiftAttackSkill
+  );
+  return finalAttackSpeed;
+}
+```
+
+<Tabs>
+  <Tab title="Base speed">
+    Base attack interval is **1000ms** (1 attack per second).
+  </Tab>
+  <Tab title="With upgrades">
+    The "Swift Strikes" prestige upgrade reduces attack interval by 5% per level. At level 10, attacks happen every 500ms (2 attacks per second).
+  </Tab>
+  <Tab title="Swift Attack skill">
+    When the Swift Attack skill is active, attack speed is multiplied by 0.5, effectively **doubling** attack speed for 5 seconds.
+    
+    ```typescript
+    SWIFT_ATTACK_DURATION = 5000; // 5 seconds
+    ```
+  </Tab>
+</Tabs>
+
+## Enemy health scaling
+
+Enemy health scales exponentially based on stage and wave progression.
+
+### Health formula
+
+From `CombatService.calculateEnemyHP()` (line 72):
+
+```typescript
+const baseHP = 100;
+const stageMultiplier = 1.5;
+const waveMultiplier = 0.05;
+
+const stagePower = Math.pow(stageMultiplier, character.currentStage - 1);
+const wavePower = Math.pow(1 + waveMultiplier, character.currentWave - 1);
+let enemyHP = Math.floor(baseHP * stagePower * wavePower);
+```
+
+### Health reduction
+
+Prestige upgrades can reduce enemy health:
+
+```typescript
+const healthReduction = this.prestigeUpgradeService.getTotalEffect(
+  UpgradeEffectType.ENEMY_HEALTH_REDUCTION
+);
+
+enemyHP = Math.floor(enemyHP * (1 - healthReduction));
+```
+
+<Warning>
+Enemy health scales extremely fast. Stage 20 enemies have **~33,000 HP**, while stage 30 enemies have **~2.6 million HP** before wave scaling!
+</Warning>
+
+### Example calculations
+
+| Stage | Wave 1 HP | Wave 10 HP |
+|-------|-----------|------------|
+| 1     | 100       | 155        |
+| 10    | 3,834     | 5,952      |
+| 20    | 33,262    | 51,625     |
+| 30    | 2,618,431 | 4,065,228  |
+
+## Gold rewards
+
+Gold is earned automatically when defeating enemies.
+
+### Gold formula
+
+```typescript
+calculateGoldReward(): number {
+  const baseGold = 10 * this.characterService.character().currentStage;
+  const waveBonusGold = 1 + this.characterService.character().currentWave * 0.05;
+
+  let gold = baseGold * waveBonusGold;
+
+  // Critical chance for double gold
+  const critChance = 0.1;
+  if (Math.random() < critChance) {
+    gold *= 2;
+  }
+  return Math.floor(gold);
+}
+```
+
+<Info>
+- Base gold = `10 × current stage`
+- Wave bonus = `+5% per wave` (1.05 at wave 1, 1.50 at wave 10)
+- 10% chance to **double** gold rewards (separate from combat critical hits)
+</Info>
+
+## Wave and stage progression
+
+When an enemy is defeated, the player advances through waves and stages:
+
+```typescript
+advanceWave() {
+  this.character.update((char) => ({
+    ...char,
+    currentWave: char.currentWave < 10 ? char.currentWave + 1 : 1,
+    currentStage: char.currentWave === 10 ? char.currentStage + 1 : char.currentStage,
+  }));
+}
+```
+
+<Note>
+Each stage contains **10 waves**. Completing wave 10 advances to stage 2, wave 1.
+</Note>
+
+## Performance attack
+
+Every attack follows this sequence from `performAttack()` (line 52):
+
+1. Calculate base damage
+2. Check for critical hit and apply multiplier
+3. Subtract damage from enemy HP (floored)
+4. If enemy HP reaches 0:
+   - Award gold
+   - Advance wave/stage
+   - Calculate new enemy HP
+
+```typescript
+performAttack() {
+  let attackAmount = this.calculateDamage();
+  if (this.criticalHit()) {
+    attackAmount *=
+      2 + this.goldUpgradeService.getTotalEffect(UpgradeEffectType.CRITICAL_DAMAGE_BOOST);
+  }
+  const remainingHP = Math.max(0, Math.floor(this.enemyHP() - attackAmount));
+  const defeated = remainingHP === 0;
+  this.enemyHP.set(remainingHP);
+  if (defeated) {
+    this.handleEnemyDefeat();
+  }
+}
+```

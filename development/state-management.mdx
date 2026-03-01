@@ -1,0 +1,510 @@
+---
+title: State management
+description: How Kaizen uses Angular signals for reactive state management
+---
+
+Kaizen uses Angular 21's signal-based state management for reactive, efficient state updates throughout the application. This modern approach replaces traditional RxJS observables for most state management needs.
+
+## Why signals?
+
+Angular signals provide:
+
+- **Fine-grained reactivity** - Only components using changed signals re-render
+- **Simpler mental model** - No need for subscriptions or manual cleanup
+- **Better performance** - Automatic change detection optimization
+- **Type safety** - Full TypeScript support with inference
+
+## Core concepts
+
+### Creating signals
+
+Signals are created using the `signal()` function:
+
+```typescript
+import { signal } from '@angular/core';
+
+export class CharacterService {
+  // Create a signal with initial value
+  character = signal<Character>(this.returnDefaultCharacter());
+  hasLoadedFromDb = signal(false);
+}
+```
+
+### Reading signal values
+
+Access signal values by calling them as functions:
+
+```typescript
+// In a service or component
+const currentCharacter = this.characterService.character();
+const isLoaded = this.characterService.hasLoadedFromDb();
+```
+
+### Updating signals
+
+Signals provide two methods for updates:
+
+<CodeGroup>
+```typescript .set() - Replace entire value
+// Replace the entire signal value
+this.character.set(newCharacter);
+this.hasLoadedFromDb.set(true);
+```
+
+```typescript .update() - Transform current value
+// Update based on current value
+this.character.update((char) => ({
+  ...char,
+  gold: char.gold + 100,
+}));
+```
+</CodeGroup>
+
+## State management patterns
+
+### Service-based state
+
+Kaizen uses services as the single source of truth for application state:
+
+```typescript src/app/services/character-service.ts
+import { Injectable, signal } from '@angular/core';
+import { Character } from '../models/character.model';
+
+@Injectable({
+  providedIn: 'root',
+})
+export class CharacterService {
+  // Signal holding character state
+  character = signal<Character>(this.returnDefaultCharacter());
+  
+  // Modify specific stat
+  modifyStat(
+    stat: keyof Pick<Character, 'level' | 'gold' | 'prestigeCores'>,
+    amount: number
+  ) {
+    const currentValue = this.character()[stat];
+    const newValue = currentValue + amount;
+    
+    if (newValue >= 0) {
+      this.character.update((char) => ({ 
+        ...char, 
+        [stat]: newValue 
+      }));
+    }
+  }
+  
+  // Spend currency with validation
+  spendGold(cost: number) {
+    this.character.update((char) => ({
+      ...char,
+      gold: char.gold - cost,
+    }));
+  }
+}
+```
+
+Key principles (src/app/services/character-service.ts:9):
+
+- Services are marked `providedIn: 'root'` for singleton behavior
+- State is exposed as public signals
+- Mutation methods provide controlled state updates
+- Validation logic is centralized in the service
+
+### Computed signals
+
+Computed signals derive values from other signals:
+
+```typescript
+import { computed } from '@angular/core';
+
+export class ClerkAuthService {
+  private clerk = inject(ClerkService);
+  
+  // Computed signals automatically update when dependencies change
+  readonly isLoaded = computed(() => this.clerk.loaded());
+  readonly isSignedIn = computed(() => !!this.clerk.user());
+}
+```
+
+<Info>
+  Computed signals only recalculate when their dependencies change, making them highly efficient.
+</Info>
+
+### Effects for side effects
+
+Effects run when signals they read change:
+
+```typescript src/app/services/character-service.ts
+import { effect } from '@angular/core';
+import { injectQuery } from 'convex-angular';
+
+export class CharacterService {
+  private getCharacterFromDatabase = injectQuery(
+    api.character.getCharacter, 
+    () => ({})
+  );
+  hasLoadedFromDb = signal(false);
+  
+  constructor() {
+    // Effect runs when database query returns data
+    effect(() => {
+      const dbCharacter = this.getCharacterFromDatabase.data();
+      if (!dbCharacter) return;
+      
+      if (this.hasLoadedFromDb()) {
+        // Incremental updates after initial load
+        this.character.update((char) => ({
+          ...char,
+          ...dbCharacter,
+        }));
+      } else {
+        // Initial load - merge with defaults
+        const merged = { 
+          ...this.returnDefaultCharacter(), 
+          ...dbCharacter 
+        };
+        this.character.set(merged);
+        this.hasLoadedFromDb.set(true);
+      }
+    });
+  }
+}
+```
+
+This pattern (src/app/services/character-service.ts:18):
+
+1. Listens for database query results using an effect
+2. Tracks whether initial load is complete with `hasLoadedFromDb`
+3. Merges database state with default values on first load
+4. Applies incremental updates on subsequent changes
+
+## State orchestration
+
+### GameStateService
+
+The `GameStateService` orchestrates multiple state services:
+
+```typescript src/app/services/gamestate-service.ts
+import { Injectable } from '@angular/core';
+
+@Injectable({
+  providedIn: 'root',
+})
+export class GameStateService {
+  constructor(
+    public goldUpgradeService: GoldUpgradeService,
+    public prestigeUpgradeService: PrestigeUpgradeService,
+    public characterService: CharacterService,
+  ) {}
+  
+  // Aggregate state from all services
+  getState(): GameState {
+    return {
+      goldUpgrades: this.goldUpgradeService.allUpgrades(),
+      prestigeUpgrades: this.prestigeUpgradeService.allUpgrades(),
+      character: this.characterService.character(),
+    };
+  }
+  
+  // Coordinate updates across services
+  pushUpdatesToDatabase() {
+    this.goldUpgradeService.updateDatabase();
+    this.prestigeUpgradeService.updateDatabase();
+    this.characterService.updateDatabase();
+  }
+}
+```
+
+This service (src/app/services/gamestate-service.ts:16):
+
+- Provides a unified interface to multiple state services
+- Aggregates state from different domains
+- Coordinates cross-service operations like saving
+
+### AutoSaveService
+
+The autosave service uses effects to trigger periodic saves:
+
+```typescript src/app/services/autosave-service.ts
+import { effect, Injectable } from '@angular/core';
+
+@Injectable({
+  providedIn: 'root',
+})
+export class AutoSaveService {
+  private saveIntervalID: number | undefined;
+  private lastSavedGameState: GameState | undefined;
+  private autoSaveHasStarted = false;
+  
+  AUTO_SAVE_INTERVAL = 300000; // 5 minutes
+  
+  constructor(private GameStateService: GameStateService) {
+    // Start autosave once data is loaded from database
+    effect(() => {
+      if (this.autoSaveHasStarted) return;
+      
+      if (this.GameStateService.characterService.hasLoadedFromDb()) {
+        this.startAutoSave();
+        this.autoSaveHasStarted = true;
+      }
+    });
+  }
+  
+  startAutoSave() {
+    this.saveIntervalID = setInterval(() => {
+      this.checkAndSave();
+    }, this.AUTO_SAVE_INTERVAL);
+    
+    this.checkAndSave();
+  }
+  
+  checkAndSave() {
+    const currentGameState = this.GameStateService.getState();
+    
+    // Only save if state has changed
+    if (JSON.stringify(currentGameState) !== 
+        JSON.stringify(this.lastSavedGameState)) {
+      this.GameStateService.pushUpdatesToDatabase();
+      this.lastSavedGameState = currentGameState;
+    }
+  }
+}
+```
+
+Key features (src/app/services/autosave-service.ts:15):
+
+- Waits for initial database load before starting autosave
+- Compares state snapshots to avoid unnecessary saves
+- Coordinates saves across all state services
+
+## Integration with Convex
+
+### Query integration
+
+Convex queries integrate seamlessly with signals:
+
+```typescript
+import { injectQuery } from 'convex-angular';
+import { api } from '../../../convex/_generated/api';
+
+export class CharacterService {
+  private getCharacterFromDatabase = injectQuery(
+    api.character.getCharacter,
+    () => ({}) // Query arguments
+  );
+  
+  constructor() {
+    effect(() => {
+      // .data() returns a signal that updates on query changes
+      const dbCharacter = this.getCharacterFromDatabase.data();
+      if (dbCharacter) {
+        this.character.set(dbCharacter);
+      }
+    });
+  }
+}
+```
+
+### Mutation integration
+
+Convex mutations are called imperatively:
+
+```typescript
+import { injectMutation } from 'convex-angular';
+
+export class CharacterService {
+  private databaseUpdateMutation = injectMutation(
+    api.character.updateCharacter
+  );
+  
+  public updateDatabase(): void {
+    const characterToSave = {
+      id: this.character().id,
+      prestigeLevel: this.character().prestigeLevel,
+      prestigeMultipliers: this.character().prestigeMultipliers,
+      prestigeCores: this.character().prestigeCores,
+      gold: this.character().gold,
+      currentStage: this.character().currentStage,
+      currentWave: this.character().currentWave,
+    };
+    
+    this.databaseUpdateMutation.mutate(characterToSave);
+  }
+}
+```
+
+## Component integration
+
+### Using signals in templates
+
+Signals can be read directly in templates:
+
+```typescript
+import { Component, inject } from '@angular/core';
+import { CharacterService } from './services/character-service';
+
+@Component({
+  selector: 'app-character',
+  template: `
+    <div>
+      <h1>{{ characterService.character().name }}</h1>
+      <p>Level: {{ characterService.character().level }}</p>
+      <p>Gold: {{ characterService.character().gold }}</p>
+    </div>
+  `
+})
+export class CharacterComponent {
+  characterService = inject(CharacterService);
+}
+```
+
+<Note>
+  Signals are automatically unwrapped in templates when called with `()`. No need for async pipe or manual subscriptions.
+</Note>
+
+### Triggering updates from components
+
+Components call service methods to update state:
+
+```typescript
+@Component({
+  selector: 'app-shop',
+  template: `
+    <button (click)="buyItem()">Buy for {{ itemCost }} gold</button>
+  `
+})
+export class ShopComponent {
+  characterService = inject(CharacterService);
+  itemCost = 100;
+  
+  buyItem() {
+    if (this.characterService.character().gold >= this.itemCost) {
+      this.characterService.spendGold(this.itemCost);
+      // Apply item effect...
+    }
+  }
+}
+```
+
+## Best practices
+
+<AccordionGroup>
+  <Accordion title="Keep signals in services">
+    - Services are the single source of truth for state
+    - Components should never create signals for shared state
+    - Use component-level signals only for local UI state
+  </Accordion>
+  
+  <Accordion title="Use .update() for partial changes">
+    ```typescript
+    // Good - preserves other properties
+    this.character.update(char => ({ ...char, gold: newGold }));
+    
+    // Bad - loses other properties
+    this.character.set({ gold: newGold });
+    ```
+  </Accordion>
+  
+  <Accordion title="Validate before updating">
+    Always validate state changes before applying them:
+    
+    ```typescript
+    spendGold(cost: number) {
+      const current = this.character().gold;
+      if (current >= cost) {
+        this.character.update(char => ({
+          ...char,
+          gold: char.gold - cost
+        }));
+      }
+    }
+    ```
+  </Accordion>
+  
+  <Accordion title="Use computed for derived state">
+    ```typescript
+    // Good - automatically updates
+    totalPower = computed(() => 
+      this.character().baseStrength * 
+      this.character().strengthModifier
+    );
+    
+    // Bad - manual synchronization needed
+    updateTotalPower() {
+      this.totalPower.set(
+        this.character().baseStrength * 
+        this.character().strengthModifier
+      );
+    }
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Common patterns
+
+### Loading states
+
+```typescript
+export class DataService {
+  data = signal<Data[]>([]);
+  isLoading = signal(false);
+  error = signal<string | null>(null);
+  
+  async loadData() {
+    this.isLoading.set(true);
+    this.error.set(null);
+    
+    try {
+      const result = await fetchData();
+      this.data.set(result);
+    } catch (err) {
+      this.error.set(err.message);
+    } finally {
+      this.isLoading.set(false);
+    }
+  }
+}
+```
+
+### Optimistic updates
+
+```typescript
+export class UpgradeService {
+  async purchaseUpgrade(id: string) {
+    // Optimistically update UI
+    this.upgrades.update(upgrades => 
+      upgrades.map(u => 
+        u.id === id 
+          ? { ...u, currentLevel: u.currentLevel + 1 } 
+          : u
+      )
+    );
+    
+    try {
+      // Persist to database
+      await this.mutation.mutate({ id });
+    } catch (err) {
+      // Rollback on failure
+      this.upgrades.update(upgrades => 
+        upgrades.map(u => 
+          u.id === id 
+            ? { ...u, currentLevel: u.currentLevel - 1 } 
+            : u
+        )
+      );
+    }
+  }
+}
+```
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Backend integration" icon="database" href="/development/backend-integration">
+    Learn how Convex integrates with Angular signals
+  </Card>
+  
+  <Card title="Project structure" icon="folder-tree" href="/development/project-structure">
+    Understand how services are organized
+  </Card>
+</CardGroup>

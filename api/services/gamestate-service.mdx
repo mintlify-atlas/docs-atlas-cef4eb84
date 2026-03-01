@@ -1,0 +1,272 @@
+---
+title: GameStateService
+description: Centralized service for accessing game state and coordinating database updates
+---
+
+## Overview
+
+The `GameStateService` provides a centralized interface for accessing the complete game state and coordinating database persistence across all services. It aggregates character data, gold upgrades, and prestige upgrades into a single state object.
+
+## Dependencies
+
+The service injects and exposes all major services:
+
+```typescript
+constructor(
+  public goldUpgradeService: GoldUpgradeService,
+  public prestigeUpgradeService: PrestigeUpgradeService,
+  public characterService: CharacterService,
+) {}
+```
+
+<Note>
+All services are marked as `public`, making them accessible to components that inject `GameStateService`.
+</Note>
+
+## Types
+
+### GameState
+
+```typescript
+interface GameState {
+  goldUpgrades: Upgrade[];
+  prestigeUpgrades: Upgrade[];
+  character: Character;
+}
+```
+
+Represents the complete game state including all upgrades and character data.
+
+## Methods
+
+### getState
+
+```typescript
+getState(): GameState
+```
+
+Retrieves the current complete game state by aggregating data from all services.
+
+**Returns:** A `GameState` object containing:
+- `goldUpgrades` - All gold upgrades with current levels
+- `prestigeUpgrades` - All prestige upgrades with current levels
+- `character` - Complete character data
+
+**Usage:**
+
+```typescript
+const gameState = gameStateService.getState();
+
+console.log('Current stage:', gameState.character.currentStage);
+console.log('Gold upgrades:', gameState.goldUpgrades.length);
+console.log('Prestige upgrades:', gameState.prestigeUpgrades.length);
+```
+
+**Example state object:**
+
+```typescript
+{
+  goldUpgrades: [
+    {
+      id: 'gold_strength_flat',
+      name: 'Noob Gains',
+      currentLevel: 12,
+      // ... other properties
+    },
+    // ... more upgrades
+  ],
+  prestigeUpgrades: [
+    {
+      id: 'attack_speed_boost',
+      name: 'Swift Strikes',
+      currentLevel: 5,
+      // ... other properties
+    },
+    // ... more upgrades
+  ],
+  character: {
+    id: '1',
+    name: 'Hero',
+    level: 1,
+    baseStrength: 1,
+    gold: 1250,
+    prestigeCores: 25,
+    currentStage: 30,
+    currentWave: 7,
+    // ... other properties
+  }
+}
+```
+
+<Info>
+The `getState()` method is useful for:
+- Debugging game state
+- Saving/exporting game data
+- Displaying comprehensive statistics
+- Testing and development tools
+</Info>
+
+### pushUpdatesToDatabase
+
+```typescript
+pushUpdatesToDatabase(): void
+```
+
+Coordinates database persistence by calling `updateDatabase()` on all services. This ensures all game state changes are saved atomically.
+
+**Actions:**
+1. `goldUpgradeService.updateDatabase()` - Saves gold upgrade levels
+2. `prestigeUpgradeService.updateDatabase()` - Saves prestige upgrade levels
+3. `characterService.updateDatabase()` - Saves character data
+
+**Usage:**
+
+```typescript
+// After making changes to game state
+gameStateService.pushUpdatesToDatabase();
+```
+
+**Common usage patterns:**
+
+```typescript
+// After purchasing an upgrade
+goldUpgradeService.purchaseUpgrade('gold_strength_flat');
+gameStateService.pushUpdatesToDatabase();
+
+// After prestiging
+prestigeService.prestige();
+gameStateService.pushUpdatesToDatabase();
+
+// Periodic auto-save
+setInterval(() => {
+  gameStateService.pushUpdatesToDatabase();
+}, 30000); // Save every 30 seconds
+```
+
+<Warning>
+This method triggers multiple database mutations. Call it strategically to balance data persistence with performance:
+
+**Good times to call:**
+- After significant state changes (prestige, purchases)
+- Before navigating away from the game
+- Periodic auto-save intervals (every 30-60 seconds)
+
+**Avoid calling:**
+- Every frame or tick
+- During active combat loops
+- Multiple times for single logical operations
+</Warning>
+
+<Info>
+Convex handles the actual database operations asynchronously. This method returns immediately without waiting for database confirmation.
+</Info>
+
+## Service access
+
+Since all services are public constructor parameters, you can access them directly:
+
+```typescript
+// Inject GameStateService
+const gameStateService = inject(GameStateService);
+
+// Access character service through GameStateService
+const character = gameStateService.characterService.character();
+
+// Access upgrade services
+const goldUpgrades = gameStateService.goldUpgradeService.allUpgrades();
+const prestigeUpgrades = gameStateService.prestigeUpgradeService.allUpgrades();
+```
+
+**This pattern allows:**
+- Single injection point for accessing all services
+- Simplified dependency management in components
+- Centralized state coordination
+
+**Example component usage:**
+
+```typescript
+import { Component, inject } from '@angular/core';
+import { GameStateService } from './services/gamestate-service';
+
+@Component({
+  selector: 'app-game',
+  template: `
+    <div>Stage: {{ character().currentStage }}</div>
+    <div>Gold: {{ character().gold }}</div>
+    <div>Prestige Cores: {{ character().prestigeCores }}</div>
+  `
+})
+export class GameComponent {
+  private gameState = inject(GameStateService);
+  
+  // Access character signal
+  character = this.gameState.characterService.character;
+  
+  saveGame() {
+    this.gameState.pushUpdatesToDatabase();
+  }
+}
+```
+
+## Persistence strategy
+
+The service implements a manual persistence strategy where changes are saved on-demand:
+
+1. **Services** maintain in-memory state using Angular signals
+2. **Components** make changes through service methods
+3. **GameStateService** coordinates saving when appropriate
+4. **Convex** handles database mutations and real-time sync
+
+**State flow:**
+
+```
+User Action → Service Method → Signal Update → UI Update
+                                      ↓
+                        pushUpdatesToDatabase()
+                                      ↓
+                            Database Mutation
+                                      ↓
+                              Convex Backend
+```
+
+## Auto-save implementation
+
+You can implement auto-save functionality using this service:
+
+```typescript
+import { Component, inject, OnInit, OnDestroy } from '@angular/core';
+import { GameStateService } from './services/gamestate-service';
+
+@Component({
+  selector: 'app-game',
+  template: '<!-- game UI -->'
+})
+export class GameComponent implements OnInit, OnDestroy {
+  private gameState = inject(GameStateService);
+  private autoSaveInterval?: number;
+  
+  ngOnInit() {
+    // Auto-save every 30 seconds
+    this.autoSaveInterval = setInterval(() => {
+      this.gameState.pushUpdatesToDatabase();
+      console.log('Game auto-saved');
+    }, 30000);
+  }
+  
+  ngOnDestroy() {
+    // Save before component destruction
+    this.gameState.pushUpdatesToDatabase();
+    
+    // Clean up interval
+    if (this.autoSaveInterval) {
+      clearInterval(this.autoSaveInterval);
+    }
+  }
+}
+```
+
+## Related Services
+
+- **[CharacterService](/api/services/character-service)** - Character state management
+- **[GoldUpgradeService](/api/services/upgrade-services#goldupgradeservice)** - Gold upgrade management
+- **[PrestigeUpgradeService](/api/services/upgrade-services#prestigeupgradeservice)** - Prestige upgrade management

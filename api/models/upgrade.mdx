@@ -1,0 +1,255 @@
+---
+title: Upgrade
+description: Upgrade interface and enums for character enhancement system
+---
+
+The `Upgrade` interface defines purchasable enhancements that boost character stats and abilities. Upgrades can be purchased with gold or prestige cores and scale in cost and effect as they level up.
+
+## Interface definition
+
+```typescript
+export interface Upgrade {
+  id: string;
+  name: string;
+  description: string;
+
+  baseCost: number;
+  costScaling: number;
+
+  effectType: UpgradeEffectType;
+  effectValue: number;
+  effectScaling: UpgradeScalingType;
+
+  currentLevel: number;
+}
+```
+
+## Properties
+
+### Identity
+
+<ResponseField name="id" type="string" required>
+  Unique identifier for the upgrade (e.g., `"gold_strength_flat"`)
+</ResponseField>
+
+<ResponseField name="name" type="string" required>
+  Display name of the upgrade shown to players
+</ResponseField>
+
+<ResponseField name="description" type="string" required>
+  Human-readable description of what the upgrade does
+</ResponseField>
+
+### Cost calculation
+
+<ResponseField name="baseCost" type="number" required>
+  Initial cost to purchase the first level of this upgrade
+</ResponseField>
+
+<ResponseField name="costScaling" type="number" required>
+  Exponential scaling factor applied to cost per level. Cost formula: `baseCost * (costScaling ^ currentLevel)`
+</ResponseField>
+
+### Effect system
+
+<ResponseField name="effectType" type="UpgradeEffectType" required>
+  The type of effect this upgrade provides (see [UpgradeEffectType](#upgradeeffecttype-enum))
+</ResponseField>
+
+<ResponseField name="effectValue" type="number" required>
+  Base value of the effect before scaling is applied
+</ResponseField>
+
+<ResponseField name="effectScaling" type="UpgradeScalingType" required>
+  How the effect scales with upgrade level (see [UpgradeScalingType](#upgradescalingtype-enum))
+</ResponseField>
+
+### Progress
+
+<ResponseField name="currentLevel" type="number" required>
+  Current level of this upgrade (0 if never purchased)
+</ResponseField>
+
+## UpgradeEffectType enum
+
+Defines the different types of effects an upgrade can provide:
+
+```typescript
+export enum UpgradeEffectType {
+  FLAT_STAT_BOOST = 'flat_stat_boost',
+  MULTIPLIER_BOOST = 'multiplier_boost',
+  ATTACK_SPEED = 'attack_speed',
+  ENEMY_HEALTH_REDUCTION = 'enemy_health_reduction',
+  DYNAMIC_PER_CORE = 'dynamic_per_core',
+  CRITICAL_CHANCE_BOOST = 'critical_chance_boost',
+  CRITICAL_DAMAGE_BOOST = 'critical_damage_boost',
+}
+```
+
+### Values
+
+<ResponseField name="FLAT_STAT_BOOST" type="'flat_stat_boost'">
+  Adds a flat amount to a character stat (strength, intelligence, or endurance)
+</ResponseField>
+
+<ResponseField name="MULTIPLIER_BOOST" type="'multiplier_boost'">
+  Multiplies a character stat by a percentage
+</ResponseField>
+
+<ResponseField name="ATTACK_SPEED" type="'attack_speed'">
+  Increases the character's attack speed
+</ResponseField>
+
+<ResponseField name="ENEMY_HEALTH_REDUCTION" type="'enemy_health_reduction'">
+  Reduces enemy health values
+</ResponseField>
+
+<ResponseField name="DYNAMIC_PER_CORE" type="'dynamic_per_core'">
+  Effect scales based on the number of prestige cores owned
+</ResponseField>
+
+<ResponseField name="CRITICAL_CHANCE_BOOST" type="'critical_chance_boost'">
+  Increases critical hit chance (additive percentage)
+</ResponseField>
+
+<ResponseField name="CRITICAL_DAMAGE_BOOST" type="'critical_damage_boost'">
+  Increases critical hit damage multiplier (additive percentage)
+</ResponseField>
+
+## UpgradeScalingType enum
+
+Defines how upgrade effects scale with level:
+
+```typescript
+export enum UpgradeScalingType {
+  LINEAR = 'linear',
+  EXPONENTIAL = 'exponential',
+  FIXED_PER_LEVEL = 'fixed_per_level',
+}
+```
+
+### Values
+
+<ResponseField name="LINEAR" type="'linear'">
+  Effect scales linearly: `effectValue * currentLevel`
+</ResponseField>
+
+<ResponseField name="EXPONENTIAL" type="'exponential'">
+  Effect scales exponentially: `effectValue ^ currentLevel`
+</ResponseField>
+
+<ResponseField name="FIXED_PER_LEVEL" type="'fixed_per_level'">
+  Effect is a fixed value if level > 0: `effectValue * (currentLevel > 0 ? 1 : 0)`
+</ResponseField>
+
+## Usage examples
+
+### Defining an upgrade
+
+```typescript
+const strengthUpgrade: Upgrade = {
+  id: 'gold_strength_flat',
+  name: 'Noob Gains',
+  description: 'Gain 1 Strength per Level',
+  baseCost: 1,
+  costScaling: 1.3,
+  effectType: UpgradeEffectType.FLAT_STAT_BOOST,
+  effectValue: 1,
+  effectScaling: UpgradeScalingType.LINEAR,
+  currentLevel: 0,
+};
+```
+
+### Calculating upgrade cost
+
+```typescript
+function calculateCost(upgrade: Upgrade): number {
+  return Math.floor(
+    upgrade.baseCost * Math.pow(upgrade.costScaling, upgrade.currentLevel)
+  );
+}
+
+// Example: First purchase costs 1 gold
+calculateCost(strengthUpgrade); // 1
+
+// After purchasing once (level 1), next purchase costs:
+// 1 * (1.3 ^ 1) = 1.3 → 1 gold (floored)
+```
+
+### Calculating upgrade effect
+
+```typescript
+function calculateEffect(upgrade: Upgrade): number {
+  switch (upgrade.effectScaling) {
+    case UpgradeScalingType.LINEAR:
+      return upgrade.effectValue * upgrade.currentLevel;
+    case UpgradeScalingType.EXPONENTIAL:
+      return Math.pow(upgrade.effectValue, upgrade.currentLevel);
+    case UpgradeScalingType.FIXED_PER_LEVEL:
+      return upgrade.effectValue * (upgrade.currentLevel > 0 ? 1 : 0);
+    default:
+      return 0;
+  }
+}
+
+// With linear scaling and level 5:
+// 1 * 5 = 5 strength gained
+```
+
+### Getting total effect by type
+
+```typescript
+function getTotalEffect(
+  upgrades: Upgrade[],
+  effectType: UpgradeEffectType
+): number {
+  return upgrades
+    .filter((u) => u.effectType === effectType)
+    .reduce((total, upgrade) => total + calculateEffect(upgrade), 0);
+}
+
+// Calculate total flat stat boost from all upgrades
+const totalFlatBoost = getTotalEffect(
+  allUpgrades,
+  UpgradeEffectType.FLAT_STAT_BOOST
+);
+```
+
+### Purchasing an upgrade
+
+```typescript
+function purchaseUpgrade(
+  upgrade: Upgrade,
+  currentGold: number
+): { success: boolean; newGold: number; newLevel: number } {
+  const cost = calculateCost(upgrade);
+  
+  if (currentGold < cost) {
+    return { success: false, newGold: currentGold, newLevel: upgrade.currentLevel };
+  }
+  
+  return {
+    success: true,
+    newGold: currentGold - cost,
+    newLevel: upgrade.currentLevel + 1
+  };
+}
+```
+
+## Related services
+
+- [GoldUpgradeService](/api/services/upgrade-services) - Manages gold-purchased upgrades
+- [PrestigeUpgradeService](/api/services/upgrade-services) - Manages prestige core upgrades
+- [BaseUpgradeService](/api/services/upgrade-services) - Abstract base class for upgrade systems
+
+<Info>
+  The `Upgrade` interface is used by both gold upgrades and prestige upgrades. The currency type (gold vs prestige cores) is determined by the service managing the upgrade, not by the upgrade definition itself.
+</Info>
+
+<Note>
+  Cost scaling should be carefully balanced. A `costScaling` value of:
+  - 1.0 = No scaling (flat cost)
+  - 1.1-1.3 = Gentle scaling (early game upgrades)
+  - 1.5-2.0 = Moderate scaling (mid game upgrades)
+  - 2.0+ = Aggressive scaling (prestige upgrades)
+</Note>

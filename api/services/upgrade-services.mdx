@@ -1,0 +1,465 @@
+---
+title: GoldUpgradeService & PrestigeUpgradeService
+description: Manage upgrade purchases, costs, and effects for both gold and prestige upgrade systems
+---
+
+## Overview
+
+Both `GoldUpgradeService` and `PrestigeUpgradeService` extend `BaseUpgradeService` to provide upgrade management functionality. They handle different currencies (gold vs prestige cores) but share the same core mechanics for purchasing, calculating costs, and applying effects.
+
+## GoldUpgradeService
+
+Manages upgrades purchased with gold. These upgrades are temporary and reset on prestige.
+
+### Available upgrades
+
+#### Noob Gains
+```typescript
+{
+  id: 'gold_strength_flat',
+  name: 'Noob Gains',
+  description: 'Gain 1 Strength per Level',
+  baseCost: 1,
+  costScaling: 1.3,
+  effectType: UpgradeEffectType.FLAT_STAT_BOOST,
+  effectValue: 1,
+  effectScaling: UpgradeScalingType.LINEAR
+}
+```
+
+#### Professional Kaizen Trainer
+```typescript
+{
+  id: 'gold_strength_stronger',
+  name: 'Professional Kaizen Trainer',
+  description: 'Gain 10 Strength per Level',
+  baseCost: 10,
+  costScaling: 1.5,
+  effectType: UpgradeEffectType.FLAT_STAT_BOOST,
+  effectValue: 10,
+  effectScaling: UpgradeScalingType.LINEAR
+}
+```
+
+#### KaaChow Statue
+```typescript
+{
+  id: 'gold_critical_chance_basic',
+  name: 'KaaChow Statue',
+  description: 'Gain 1% additive Critical Chance per Level',
+  baseCost: 50,
+  costScaling: 1.2,
+  effectType: UpgradeEffectType.CRITICAL_CHANCE_BOOST,
+  effectValue: 0.01,
+  effectScaling: UpgradeScalingType.LINEAR
+}
+```
+
+#### Heavy Hitter
+```typescript
+{
+  id: 'gold_critical_damage_basic',
+  name: 'Heavy Hitter',
+  description: 'Gain 5% additive Critical Damage per Level',
+  baseCost: 50,
+  costScaling: 1.2,
+  effectType: UpgradeEffectType.CRITICAL_DAMAGE_BOOST,
+  effectValue: 0.05,
+  effectScaling: UpgradeScalingType.LINEAR
+}
+```
+
+### Currency methods
+
+```typescript
+protected getCurrentCurrency(): number
+```
+Returns the character's current gold amount.
+
+```typescript
+protected spendCurrency(amount: number): void
+```
+Spends gold from the character via `CharacterService.spendGold()`.
+
+### Database persistence
+
+```typescript
+public updateDatabase(): void
+```
+
+Saves current upgrade levels to the database using Convex mutation.
+
+**Usage:**
+
+```typescript
+goldUpgradeService.updateDatabase();
+```
+
+## PrestigeUpgradeService
+
+Manages permanent upgrades purchased with prestige cores. These upgrades persist across prestige cycles.
+
+### Available upgrades
+
+#### Swift Strikes
+```typescript
+{
+  id: 'attack_speed_boost',
+  name: 'Swift Strikes',
+  description: 'Reduce attack interval by 5% per Level',
+  baseCost: 1,
+  costScaling: 2,
+  effectType: UpgradeEffectType.ATTACK_SPEED,
+  effectValue: 0.05,
+  effectScaling: UpgradeScalingType.LINEAR
+}
+```
+
+#### Titans Power
+```typescript
+{
+  id: 'strength_multiplier',
+  name: 'Titans Power',
+  description: 'Increase strength by 1 per Level',
+  baseCost: 1,
+  costScaling: 1.8,
+  effectType: UpgradeEffectType.FLAT_STAT_BOOST,
+  effectValue: 1,
+  effectScaling: UpgradeScalingType.LINEAR
+}
+```
+
+#### Kaizen Mastery
+```typescript
+{
+  id: 'core_gain_boost',
+  name: 'Kaizen Mastery',
+  description: 'Increase Kaizen-Core gain by 10% per Level',
+  baseCost: 1,
+  costScaling: 2,
+  effectType: UpgradeEffectType.MULTIPLIER_BOOST,
+  effectValue: 0.1,
+  effectScaling: UpgradeScalingType.LINEAR
+}
+```
+
+#### Fragile Foes
+```typescript
+{
+  id: 'enemy_health_reduction',
+  name: 'Fragile Foes',
+  description: 'Reduce enemy health by 5% per Level',
+  baseCost: 1,
+  costScaling: 1.6,
+  effectType: UpgradeEffectType.ENEMY_HEALTH_REDUCTION,
+  effectValue: 0.05,
+  effectScaling: UpgradeScalingType.LINEAR
+}
+```
+
+#### Hoarded Power
+```typescript
+{
+  id: 'dps_per_core',
+  name: 'Hoarded Power',
+  description: 'Gain 2% DPS per unused Kaizen-Core',
+  baseCost: 1,
+  costScaling: 2.5,
+  effectType: UpgradeEffectType.DYNAMIC_PER_CORE,
+  effectValue: 0.02,
+  effectScaling: UpgradeScalingType.LINEAR
+}
+```
+
+### Currency methods
+
+```typescript
+protected getCurrentCurrency(): number
+```
+Returns the character's current prestige core count.
+
+```typescript
+protected spendCurrency(amount: number): void
+```
+Spends prestige cores from the character via `CharacterService.spendPrestigeCores()`.
+
+### Database persistence
+
+```typescript
+public updateDatabase(): void
+```
+
+Saves current upgrade levels to the database using Convex mutation.
+
+**Usage:**
+
+```typescript
+prestigeUpgradeService.updateDatabase();
+```
+
+## Shared methods (from BaseUpgradeService)
+
+Both services inherit these methods from `BaseUpgradeService`:
+
+### Properties
+
+#### allUpgrades
+
+```typescript
+readonly allUpgrades: Signal<Upgrade[]>
+```
+
+Read-only signal containing all upgrades with their current levels.
+
+#### hasLoadedFromDb
+
+```typescript
+hasLoadedFromDb: Signal<boolean>
+```
+
+Indicates whether upgrades have been loaded from the database.
+
+### calculateCost
+
+```typescript
+calculateCost(upgrade: Upgrade): number
+```
+
+Calculates the cost to purchase the next level of an upgrade.
+
+**Formula:**
+```typescript
+cost = baseCost * Math.pow(costScaling, currentLevel)
+```
+
+<ParamField path="upgrade" type="Upgrade" required>
+  The upgrade object containing baseCost, costScaling, and currentLevel
+</ParamField>
+
+**Returns:** The cost for the next level (floored to integer)
+
+**Usage:**
+
+```typescript
+const upgrade = goldUpgradeService.getUpgradeByID('gold_strength_flat');
+const cost = goldUpgradeService.calculateCost(upgrade);
+```
+
+**Cost scaling examples:**
+
+```typescript
+// Upgrade with baseCost: 10, costScaling: 1.5
+// Level 0 → 1: 10 * (1.5^0) = 10
+// Level 1 → 2: 10 * (1.5^1) = 15
+// Level 2 → 3: 10 * (1.5^2) = 22
+// Level 3 → 4: 10 * (1.5^3) = 33
+```
+
+### canPurchase
+
+```typescript
+canPurchase(upgradeID: string): boolean
+```
+
+Checks if the player has enough currency to purchase an upgrade.
+
+<ParamField path="upgradeID" type="string" required>
+  The unique identifier of the upgrade
+</ParamField>
+
+**Returns:** `true` if the upgrade can be purchased, `false` otherwise
+
+**Usage:**
+
+```typescript
+if (goldUpgradeService.canPurchase('gold_strength_flat')) {
+  // Show as purchasable
+}
+```
+
+### purchaseUpgrade
+
+```typescript
+purchaseUpgrade(upgradeID: string): boolean
+```
+
+Attempts to purchase an upgrade. Checks affordability, spends currency, and increments the upgrade level.
+
+<ParamField path="upgradeID" type="string" required>
+  The unique identifier of the upgrade to purchase
+</ParamField>
+
+**Returns:** `true` if purchase was successful, `false` if not enough currency
+
+**Usage:**
+
+```typescript
+const success = goldUpgradeService.purchaseUpgrade('gold_strength_flat');
+
+if (success) {
+  console.log('Upgrade purchased!');
+} else {
+  console.log('Not enough gold');
+}
+```
+
+<Warning>
+This method does not persist to the database automatically. Call `updateDatabase()` separately to save the purchase.
+</Warning>
+
+### getUpgradeByID
+
+```typescript
+getUpgradeByID(upgradeID: string): Upgrade | undefined
+```
+
+Retrieves an upgrade by its unique identifier.
+
+<ParamField path="upgradeID" type="string" required>
+  The unique identifier of the upgrade
+</ParamField>
+
+**Returns:** The upgrade object, or `undefined` if not found
+
+**Usage:**
+
+```typescript
+const upgrade = prestigeUpgradeService.getUpgradeByID('attack_speed_boost');
+
+if (upgrade) {
+  console.log(`${upgrade.name} - Level ${upgrade.currentLevel}`);
+}
+```
+
+### getTotalEffect
+
+```typescript
+getTotalEffect(effectType: UpgradeEffectType): number
+```
+
+Calculates the total effect value for all upgrades of a specific effect type.
+
+<ParamField path="effectType" type="UpgradeEffectType" required>
+  The effect type to sum. Valid values: `FLAT_STAT_BOOST`, `MULTIPLIER_BOOST`, `ATTACK_SPEED`, `ENEMY_HEALTH_REDUCTION`, `DYNAMIC_PER_CORE`, `CRITICAL_CHANCE_BOOST`, `CRITICAL_DAMAGE_BOOST`
+</ParamField>
+
+**Returns:** The sum of all effects of the specified type
+
+**Usage:**
+
+```typescript
+const totalStrengthBoost = goldUpgradeService.getTotalEffect(
+  UpgradeEffectType.FLAT_STAT_BOOST
+);
+// If "Noob Gains" is level 5 and "Professional Kaizen Trainer" is level 3:
+// Returns: (1 * 5) + (10 * 3) = 35
+
+const attackSpeedBoost = prestigeUpgradeService.getTotalEffect(
+  UpgradeEffectType.ATTACK_SPEED
+);
+// If "Swift Strikes" is level 4:
+// Returns: 0.05 * 4 = 0.20 (20% attack speed increase)
+```
+
+<Info>
+This method is heavily used in combat and damage calculations to aggregate all upgrade bonuses.
+</Info>
+
+### calculateEffect
+
+```typescript
+calculateEffect(upgrade: Upgrade): number
+```
+
+Calculates the current effect value for a single upgrade based on its level and scaling type.
+
+<ParamField path="upgrade" type="Upgrade" required>
+  The upgrade object to calculate effect for
+</ParamField>
+
+**Returns:** The calculated effect value
+
+**Scaling types:**
+
+- **Linear**: `effectValue * currentLevel`
+- **Exponential**: `Math.pow(effectValue, currentLevel)`
+- **Fixed per level**: `effectValue` if level > 0, else 0
+
+**Usage:**
+
+```typescript
+const upgrade = prestigeUpgradeService.getUpgradeByID('strength_multiplier');
+const effect = prestigeUpgradeService.calculateEffect(upgrade);
+// If level is 10: effect = 1 * 10 = 10
+```
+
+## Effect types
+
+Upgrades can have different effect types that are applied in various parts of the game:
+
+```typescript
+enum UpgradeEffectType {
+  FLAT_STAT_BOOST = 'flat_stat_boost',           // Adds flat damage
+  MULTIPLIER_BOOST = 'multiplier_boost',         // Increases prestige core gain
+  ATTACK_SPEED = 'attack_speed',                  // Reduces attack interval
+  ENEMY_HEALTH_REDUCTION = 'enemy_health_reduction', // Reduces enemy HP
+  DYNAMIC_PER_CORE = 'dynamic_per_core',         // DPS bonus per unused core
+  CRITICAL_CHANCE_BOOST = 'critical_chance_boost', // Increases crit chance
+  CRITICAL_DAMAGE_BOOST = 'critical_damage_boost'  // Increases crit damage
+}
+```
+
+## Scaling types
+
+Upgrades scale in different ways:
+
+```typescript
+enum UpgradeScalingType {
+  LINEAR = 'linear',                 // Value * Level
+  EXPONENTIAL = 'exponential',       // Value ^ Level
+  FIXED_PER_LEVEL = 'fixed_per_level' // Value (if level > 0)
+}
+```
+
+<Note>
+All current upgrades use `LINEAR` scaling in the implementation.
+</Note>
+
+## Database integration
+
+Both services use Convex for real-time database synchronization:
+
+**GoldUpgradeService:**
+```typescript
+private getUpgradesFromDatabase = injectQuery(api.goldUpgrades.getGoldUpgrades, () => ({}));
+private databaseUpdateMutation = injectMutation(api.goldUpgrades.updateGoldUpgradeLevels);
+```
+
+**PrestigeUpgradeService:**
+```typescript
+private getUpgradesFromDatabase = injectQuery(api.prestigeUpgrades.getPrestigeUpgrades, () => ({}));
+private databaseUpdateMutation = injectMutation(api.prestigeUpgrades.updatePrestigeUpgradeLevels);
+```
+
+Upgrades are loaded on initialization and merged with default definitions:
+
+```typescript
+effect(() => {
+  const dbUpgrades = query.data();
+  if (!dbUpgrades) return;
+  
+  const merged = defaultUpgrades.map((upgrade) => {
+    const savedUpgrade = dbUpgrades.find(s => s.id === upgrade.id);
+    return {
+      ...upgrade,
+      currentLevel: savedUpgrade?.currentLevel ?? 0
+    };
+  });
+  
+  this.upgrades.set(merged);
+});
+```
+
+## Related types
+
+See the [Upgrade model](/api/models/upgrade) for the complete `Upgrade` interface and enum definitions.

@@ -1,0 +1,74 @@
+---
+title: Navbar component
+description: Navigation bar component providing routing between main application pages
+---
+
+## Overview
+
+The `Navbar` component renders the main navigation header for the Kaizen application. It provides navigation links to the primary sections of the game: Dashboard, Character, Milestones, and Campaign.
+
+## Component metadata
+
+- **Selector**: `app-navbar`
+- **Source**: `/src/app/components/navbar/navbar.ts`
+- **Standalone**: Yes (uses imports array)
+
+## Template structure
+
+The navbar uses a horizontal flex layout with a brand name and navigation menu:
+
+```html
+<header class="flex gap-5 px-20 py-5 items-center bg-gray-800 text-white justify-between">
+  <span>Kaizen</span>
+  <ul class="flex gap-5">
+    <li routerLink="/dashboard" routerLinkActive="text-gray-200 font-bold">Dashboard</li>
+    <li routerLink="/character" routerLinkActive="text-gray-200 font-bold">Character</li>
+    <li routerLink="/milestones" routerLinkActive="text-gray-200 font-bold">Milestones</li>
+    <li routerLink="/campaign" routerLinkActive="text-gray-200 font-bold">Campaign</li>
+  </ul>
+</header>
+```
+
+## Inputs
+
+This component does not accept any inputs.
+
+## Outputs
+
+This component does not emit any outputs.
+
+## Dependencies
+
+The component imports Angular Router directives:
+
+- `RouterLink` - Enables navigation to routes
+- `RouterLinkActive` - Applies active styling to the current route
+
+## Usage
+
+```typescript
+import { Navbar } from './components/navbar/navbar';
+
+@Component({
+  selector: 'app-root',
+  imports: [Navbar],
+  template: `
+    <app-navbar></app-navbar>
+    <router-outlet></router-outlet>
+  `
+})
+export class AppComponent {}
+```
+
+## Styling
+
+The navbar applies the following visual styling:
+
+- Dark gray background (`bg-gray-800`)
+- White text color
+- Horizontal padding of 5rem
+- Active route links are bolded and lightened to `text-gray-200`
+
+<Note>
+  The navbar automatically highlights the active route using the `routerLinkActive` directive.
+</Note>

@@ -1,0 +1,342 @@
+---
+title: Milestone system
+description: Learn about achievement milestones in Kaizen and how they track player progress
+---
+
+The milestone system tracks player achievements and progress throughout the game, providing goals and rewards for major accomplishments.
+
+## Milestone model
+
+Milestones are defined by the `Milestone` interface:
+
+```typescript
+export interface Milestone {
+  id: string;
+  type: 'Strength' | 'Intelligence' | 'Endurance';
+  requirement: string;
+  reward: number;
+  achieved: boolean;
+  achievedAt?: Date;
+  level: number;
+}
+```
+
+### Property breakdown
+
+<Tabs>
+  <Tab title="id">
+    Unique identifier for the milestone.
+    
+    Example: `"milestone_strength_100"`
+  </Tab>
+  <Tab title="type">
+    The stat category this milestone belongs to:
+    - **Strength**: Combat-related achievements
+    - **Intelligence**: Skill and knowledge achievements  
+    - **Endurance**: Survival and persistence achievements
+    
+    Currently, only Strength is actively used in combat mechanics.
+  </Tab>
+  <Tab title="requirement">
+    Human-readable description of what's needed to complete the milestone.
+    
+    Example: `"Reach stage 50"`
+  </Tab>
+  <Tab title="reward">
+    Numeric value representing the reward amount.
+    
+    The reward type depends on the milestone (gold, cores, stat bonuses, etc.)
+  </Tab>
+  <Tab title="achieved">
+    Boolean flag indicating whether the player has completed this milestone.
+    
+    Default: `false`
+  </Tab>
+  <Tab title="achievedAt">
+    Optional timestamp recording when the milestone was achieved.
+    
+    Only set after `achieved` becomes `true`.
+  </Tab>
+  <Tab title="level">
+    The tier or difficulty level of this milestone.
+    
+    Higher levels typically represent harder achievements with better rewards.
+  </Tab>
+</Tabs>
+
+## Milestone service
+
+The `MilestoneService` manages milestone state and persistence:
+
+```typescript
+@Injectable({
+  providedIn: 'root',
+})
+export class MilestoneService {
+  milestones = signal<Milestone[]>(this.loadMilestones());
+
+  constructor() {
+    effect(() => {
+      localStorage.setItem('milestones', JSON.stringify(this.milestones()));
+    });
+  }
+
+  private loadMilestones(): Milestone[] {
+    const saved = localStorage.getItem('milestones');
+    if (saved) {
+      return JSON.parse(saved);
+    }
+    return [];
+  }
+}
+```
+
+### State management
+
+Milestones are stored as an Angular signal that automatically persists to localStorage:
+
+<Accordion title="Loading milestones">
+On service initialization, milestones are loaded from localStorage:
+
+```typescript
+private loadMilestones(): Milestone[] {
+  const saved = localStorage.getItem('milestones');
+  if (saved) {
+    return JSON.parse(saved);
+  }
+  return [];
+}
+```
+
+If no saved data exists, returns an empty array.
+</Accordion>
+
+<Accordion title="Auto-saving">
+Using Angular's `effect()`, milestones automatically save to localStorage whenever the signal updates:
+
+```typescript
+effect(() => {
+  localStorage.setItem('milestones', JSON.stringify(this.milestones()));
+});
+```
+
+<Info>
+This reactive approach ensures milestone progress is never lost, even if the app crashes.
+</Info>
+</Accordion>
+
+## Milestone persistence
+
+Milestones use localStorage for client-side persistence rather than the Convex database.
+
+### Storage format
+
+```json
+[
+  {
+    "id": "milestone_stage_10",
+    "type": "Strength",
+    "requirement": "Reach stage 10",
+    "reward": 100,
+    "achieved": true,
+    "achievedAt": "2026-03-01T10:30:00.000Z",
+    "level": 1
+  },
+  {
+    "id": "milestone_stage_20",
+    "type": "Strength",
+    "requirement": "Reach stage 20",
+    "reward": 500,
+    "achieved": false,
+    "level": 2
+  }
+]
+```
+
+<Warning>
+Using localStorage means milestone progress is **browser-specific** and won't sync across devices. This differs from character data which uses Convex for cross-device sync.
+</Warning>
+
+## Milestone UI integration
+
+Milestone UI components are located in the pages directory:
+
+```bash
+src/app/pages/milestones/
+├── milestones.ts
+└── components/
+    └── milestone-card/
+        └── milestone-card.ts
+```
+
+### Accessing milestones
+
+Components can inject the `MilestoneService` to read milestone state:
+
+```typescript
+import { MilestoneService } from '@services/milestone-service';
+
+@Component({
+  selector: 'app-milestones',
+  // ...
+})
+export class MilestonesComponent {
+  milestoneService = inject(MilestoneService);
+  
+  get allMilestones() {
+    return this.milestoneService.milestones();
+  }
+  
+  get achievedMilestones() {
+    return this.milestoneService.milestones().filter(m => m.achieved);
+  }
+}
+```
+
+<Tip>
+The `milestones` signal is readonly from outside the service, preventing accidental mutations.
+</Tip>
+
+## Milestone types and categories
+
+The three milestone types represent different progression paths:
+
+<Tabs>
+  <Tab title="Strength milestones">
+    **Combat achievements:**
+    - Reaching high stages
+    - Defeating enemies quickly
+    - Dealing massive damage
+    - Completing waves efficiently
+    
+    These milestones track your raw combat power and progression.
+  </Tab>
+  <Tab title="Intelligence milestones">
+    **Strategic achievements:**
+    - Efficient upgrade purchases
+    - Optimal prestige timing
+    - Resource management
+    
+    <Note>
+    Intelligence milestones are defined in the model but not actively implemented in current game mechanics.
+    </Note>
+  </Tab>
+  <Tab title="Endurance milestones">
+    **Persistence achievements:**
+    - Long play sessions
+    - Total enemies defeated
+    - Multiple prestige cycles
+    - Time-based goals
+    
+    <Note>
+    Endurance milestones are defined in the model but not actively implemented in current game mechanics.
+    </Note>
+  </Tab>
+</Tabs>
+
+## Milestone levels
+
+The `level` property creates milestone tiers with increasing difficulty:
+
+**Example progression:**
+
+| Level | Requirement | Reward Type | Reward Amount |
+|-------|-------------|-------------|---------------|
+| 1     | Stage 10    | Gold        | 100           |
+| 2     | Stage 20    | Gold        | 500           |
+| 3     | Stage 50    | Cores       | 5             |
+| 4     | Stage 100   | Cores       | 10            |
+| 5     | Stage 200   | Cores       | 25            |
+
+<Info>
+Higher-level milestones typically require exponentially more effort but provide proportionally better rewards.
+</Info>
+
+## Current implementation status
+
+Based on the source code review:
+
+<Tabs>
+  <Tab title="Implemented">
+    - Milestone data model ✓
+    - MilestoneService with signal-based state ✓
+    - LocalStorage persistence ✓
+    - UI components for milestone display ✓
+    - Three milestone type categories ✓
+  </Tab>
+  <Tab title="Not implemented">
+    - Automatic milestone checking/completion
+    - Reward distribution system
+    - Milestone definitions (no default milestones)
+    - Progress tracking towards incomplete milestones
+    - Achievement notifications
+  </Tab>
+</Tabs>
+
+<Warning>
+The milestone system has the infrastructure but lacks gameplay integration. The service can store and display milestones, but there's no code checking player progress against milestone requirements.
+</Warning>
+
+## Extending the milestone system
+
+To fully implement milestones, you would need to:
+
+### 1. Define milestone list
+
+Create a default set of milestones:
+
+```typescript
+private getDefaultMilestones(): Milestone[] {
+  return [
+    {
+      id: 'milestone_stage_10',
+      type: 'Strength',
+      requirement: 'Reach stage 10',
+      reward: 100,
+      achieved: false,
+      level: 1,
+    },
+    // ... more milestones
+  ];
+}
+```
+
+### 2. Add milestone checking
+
+Check for milestone completion after key events:
+
+```typescript
+checkMilestones(character: Character) {
+  this.milestones.update(milestones =>
+    milestones.map(milestone => {
+      if (!milestone.achieved && this.isMilestoneComplete(milestone, character)) {
+        return {
+          ...milestone,
+          achieved: true,
+          achievedAt: new Date(),
+        };
+      }
+      return milestone;
+    })
+  );
+}
+```
+
+### 3. Implement reward distribution
+
+Grant rewards when milestones are achieved:
+
+```typescript
+private grantReward(milestone: Milestone) {
+  switch (milestone.type) {
+    case 'Strength':
+      this.characterService.modifyStat('gold', milestone.reward);
+      break;
+    // Handle other types
+  }
+}
+```
+
+<Tip>
+Integrate milestone checking in `CombatService.handleEnemyDefeat()` and `CharacterService.advanceWave()` to track progress automatically.
+</Tip>

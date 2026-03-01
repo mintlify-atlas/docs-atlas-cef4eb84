@@ -1,0 +1,172 @@
+---
+title: PrestigeUpgradeCard component
+description: Interactive card component for displaying and purchasing prestige upgrades
+---
+
+## Overview
+
+The `PrestigeUpgradeCard` component displays information about a prestige upgrade, including its name, description, current effect value, and cost. The entire card is clickable to trigger a purchase event.
+
+## Component metadata
+
+- **Selector**: `app-prestige-upgrade-card`
+- **Source**: `/src/app/components/prestige-upgrade-card/prestige-upgrade-card.ts`
+- **Standalone**: Yes (uses imports array)
+
+## Template structure
+
+The card displays upgrade information in a vertical centered layout:
+
+```html
+<div
+  class="bg-blue-950 text-white rounded-lg h-full px-4 py-6 flex flex-col items-center gap-4"
+  (click)="purchase.emit()"
+>
+  <p class="text-xl font-bold text-center">{{ upgrade().name }}</p>
+  <p class="text-center text-sm text-gray-400">{{ upgrade().description }}</p>
+  <p>{{ flooredTotalEffect() }}</p>
+  <button>Cost: {{ currentCost() }} {{ label() }}</button>
+</div>
+```
+
+## Inputs
+
+<ParamField path="upgrade" type="Upgrade" required>
+  The upgrade object containing metadata about the prestige upgrade.
+</ParamField>
+
+<ParamField path="currentCost" type="number" required>
+  The current cost to purchase this upgrade level.
+</ParamField>
+
+<ParamField path="totalEffect" type="number" required>
+  The total effect value of the upgrade. This is automatically floored to 2 decimal places for display.
+</ParamField>
+
+<ParamField path="label" type="string" required>
+  The label for the currency type used to purchase the upgrade (e.g., "Cores", "Points").
+</ParamField>
+
+### Upgrade interface
+
+```typescript
+interface Upgrade {
+  id: string;
+  name: string;
+  description: string;
+  baseCost: number;
+  costScaling: number;
+  effectType: UpgradeEffectType;
+  effectValue: number;
+  effectScaling: UpgradeScalingType;
+  currentLevel: number;
+}
+
+enum UpgradeEffectType {
+  FLAT_STAT_BOOST = 'flat_stat_boost',
+  MULTIPLIER_BOOST = 'multiplier_boost',
+  ATTACK_SPEED = 'attack_speed',
+  ENEMY_HEALTH_REDUCTION = 'enemy_health_reduction',
+  DYNAMIC_PER_CORE = 'dynamic_per_core',
+  CRITICAL_CHANCE_BOOST = 'critical_chance_boost',
+  CRITICAL_DAMAGE_BOOST = 'critical_damage_boost',
+}
+
+enum UpgradeScalingType {
+  LINEAR = 'linear',
+  EXPONENTIAL = 'exponential',
+  FIXED_PER_LEVEL = 'fixed_per_level',
+}
+```
+
+## Outputs
+
+<ParamField path="purchase" type="EventEmitter<void>">
+  Emitted when the card is clicked, indicating a purchase attempt.
+</ParamField>
+
+## Computed properties
+
+### flooredTotalEffect
+
+Computed signal that floors the `totalEffect` value to 2 decimal places for display:
+
+```typescript
+flooredTotalEffect = computed(() => Math.floor(this.totalEffect() * 100) / 100);
+```
+
+## Usage
+
+```typescript
+import { PrestigeUpgradeCard } from './components/prestige-upgrade-card/prestige-upgrade-card';
+import { Upgrade } from './models/prestige.model';
+
+@Component({
+  selector: 'app-prestige-page',
+  imports: [PrestigeUpgradeCard],
+  template: `
+    <div class="grid grid-cols-3 gap-4">
+      @for (upgrade of upgrades; track upgrade.id) {
+        <app-prestige-upgrade-card
+          [upgrade]="upgrade"
+          [currentCost]="calculateCost(upgrade)"
+          [totalEffect]="calculateEffect(upgrade)"
+          [label]="'Cores'"
+          (purchase)="handlePurchase(upgrade)"
+        />
+      }
+    </div>
+  `
+})
+export class PrestigePage {
+  upgrades: Upgrade[] = [];
+
+  calculateCost(upgrade: Upgrade): number {
+    return upgrade.baseCost * Math.pow(upgrade.costScaling, upgrade.currentLevel);
+  }
+
+  calculateEffect(upgrade: Upgrade): number {
+    // Calculate based on scaling type
+    return upgrade.effectValue * upgrade.currentLevel;
+  }
+
+  handlePurchase(upgrade: Upgrade) {
+    console.log('Purchasing upgrade:', upgrade.id);
+    // Handle purchase logic
+  }
+}
+```
+
+## Example
+
+```typescript
+const upgrade: Upgrade = {
+  id: 'dmg-boost',
+  name: 'Damage Multiplier',
+  description: 'Increases base damage dealt to enemies',
+  baseCost: 10,
+  costScaling: 1.5,
+  effectType: UpgradeEffectType.MULTIPLIER_BOOST,
+  effectValue: 1.1,
+  effectScaling: UpgradeScalingType.EXPONENTIAL,
+  currentLevel: 3
+};
+```
+
+```html
+<app-prestige-upgrade-card
+  [upgrade]="upgrade"
+  [currentCost]="33.75"
+  [totalEffect]="1.331"
+  [label]="'Prestige Cores'"
+  (purchase)="onPurchase()"
+/>
+```
+
+<Info>
+  The entire card is clickable, providing a large touch target for purchasing upgrades. The component handles the display formatting while the parent handles cost and effect calculations.
+</Info>
+
+<Note>
+  The `flooredTotalEffect` computed property ensures consistent decimal precision across all upgrade displays, preventing floating-point display issues.
+</Note>

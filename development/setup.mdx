@@ -1,0 +1,218 @@
+---
+title: Development environment setup
+description: Set up your local development environment for Kaizen
+---
+
+This guide walks you through setting up a complete development environment for Kaizen, including all dependencies, environment variables, and development tools.
+
+## Prerequisites
+
+Before starting, ensure you have the following installed:
+
+- **Node.js** (v18 or later)
+- **pnpm** (v8 or later) - Kaizen uses pnpm as its package manager
+- **Git** for version control
+
+## Installation
+
+<Steps>
+  <Step title="Clone the repository">
+    Clone the Kaizen repository to your local machine:
+
+    ```bash
+    git clone <repository-url>
+    cd kaizen
+    ```
+  </Step>
+
+  <Step title="Install dependencies">
+    Install all project dependencies using pnpm:
+
+    ```bash
+    pnpm install
+    ```
+
+    This will install:
+    - Angular 21 framework and CLI
+    - Convex client and Angular integration
+    - Clerk authentication library
+    - PrimeNG component library
+    - TailwindCSS for styling
+  </Step>
+
+  <Step title="Configure environment variables">
+    Create environment configuration files in `src/environments/`:
+
+    **src/environments/environment.development.ts**
+    ```typescript
+    export const environment = {
+      production: false,
+      convexPublicUrl: 'your-convex-url',
+      clerkPublicKey: 'your-clerk-publishable-key'
+    };
+    ```
+
+    **src/environments/environment.ts**
+    ```typescript
+    export const environment = {
+      production: true,
+      convexPublicUrl: 'your-convex-url',
+      clerkPublicKey: 'your-clerk-publishable-key'
+    };
+    ```
+
+    <Note>
+      The development environment file is automatically used when running `ng serve` due to the file replacement configuration in `angular.json`.
+    </Note>
+  </Step>
+
+  <Step title="Set up Convex backend">
+    Initialize and deploy the Convex backend:
+
+    ```bash
+    npx convex dev
+    ```
+
+    This command:
+    - Creates a new Convex project (first time only)
+    - Generates type definitions in `convex/_generated/`
+    - Starts the Convex development server
+    - Watches for changes to your Convex functions
+
+    <Info>
+      Keep this terminal window open - it needs to run alongside your Angular dev server.
+    </Info>
+  </Step>
+
+  <Step title="Configure Clerk authentication">
+    Set up Clerk for authentication:
+
+    1. Create a Clerk application at [clerk.com](https://clerk.com)
+    2. Create a JWT template named "convex" in your Clerk dashboard
+    3. Copy the Issuer URL and set it as `CLERK_JWT_ISSUER_DOMAIN` in your Convex dashboard
+    4. Copy your Clerk publishable key to your environment files
+
+    Update `convex/auth.config.ts` to use the environment variable:
+    ```typescript
+    import { AuthConfig } from 'convex/server';
+
+    export default {
+      providers: [
+        {
+          domain: process.env.CLERK_JWT_ISSUER_DOMAIN!,
+          applicationID: 'convex',
+        },
+      ],
+    } satisfies AuthConfig;
+    ```
+  </Step>
+
+  <Step title="Start the development server">
+    Start the Angular development server:
+
+    ```bash
+    pnpm start
+    # or
+    ng serve
+    ```
+
+    The application will be available at `http://localhost:4200`.
+
+    <Info>
+      The dev server supports hot module replacement - changes to your code will automatically reload the browser.
+    </Info>
+  </Step>
+</Steps>
+
+## Available scripts
+
+Kaizen provides several npm scripts for development:
+
+| Script | Command | Description |
+|--------|---------|-------------|
+| `start` | `ng serve` | Start development server |
+| `build` | `ng build` | Build for production |
+| `watch` | `ng build --watch --configuration development` | Build in watch mode |
+| `test` | `ng test` | Run unit tests with Karma |
+
+## Development tools
+
+### VS Code configuration
+
+The project includes recommended VS Code settings in `.vscode/`:
+
+- **extensions.json** - Recommended extensions for Angular development
+- **launch.json** - Debug configurations for Chrome
+- **tasks.json** - Build and serve tasks
+
+### Angular configuration
+
+Key Angular CLI configurations in `angular.json`:
+
+```json
+{
+  "schematics": {
+    "@schematics/angular:component": {
+      "skipTests": true,
+      "inlineStyle": true,
+      "standalone": true
+    },
+    "@schematics/angular:service": {
+      "skipTests": true
+    }
+  }
+}
+```
+
+All components are generated as standalone components by default.
+
+### TypeScript configuration
+
+The project uses strict TypeScript settings (`tsconfig.json`):
+
+- `strict: true` - All strict type checking options enabled
+- `noImplicitOverride: true` - Require explicit override keywords
+- `noImplicitReturns: true` - Ensure all code paths return values
+- `experimentalDecorators: true` - Required for Angular decorators
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Convex connection errors">
+    If you see connection errors to Convex:
+    
+    1. Ensure `npx convex dev` is running
+    2. Verify `convexPublicUrl` in your environment file matches your Convex dashboard
+    3. Check that your network allows WebSocket connections
+  </Accordion>
+
+  <Accordion title="Clerk authentication not working">
+    Common Clerk issues:
+    
+    1. Verify `clerkPublicKey` is correct in your environment file
+    2. Ensure the JWT template "convex" is configured in Clerk
+    3. Check that `CLERK_JWT_ISSUER_DOMAIN` is set in Convex dashboard
+    4. Clear browser cookies and try again
+  </Accordion>
+
+  <Accordion title="Build errors after installing dependencies">
+    If you encounter build errors:
+    
+    1. Delete `node_modules` and `pnpm-lock.yaml`
+    2. Run `pnpm install` again
+    3. Clear Angular cache: `rm -rf .angular`
+    4. Restart your development server
+  </Accordion>
+</AccordionGroup>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Project structure" icon="folder-tree" href="/development/project-structure">
+    Learn about the file and folder organization
+  </Card>
+  
+  <Card title="State management" icon="signal" href="/development/state-management">
+    Understand how Angular signals manage state
+  </Card>
+</CardGroup>

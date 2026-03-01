@@ -1,0 +1,256 @@
+---
+title: Prestige system
+description: Learn how prestiging works in Kaizen, including prestige core calculation and progression mechanics
+---
+
+The prestige system allows you to reset your progress in exchange for permanent bonuses, creating a cycle of incremental improvement.
+
+## How prestiging works
+
+Prestiging is handled by the `PrestigeService` and involves resetting most character stats while preserving prestige-related progress.
+
+### Prestige method
+
+From `PrestigeService.prestige()` (line 13):
+
+```typescript
+prestige() {
+  const coresEarned = this.calculatePrestigeCores();
+  this.characterService.resetCharacter();
+  this.characterService.modifyStat('prestigeCores', coresEarned);
+  this.characterService.modifyStat('prestigeLevel', 1);
+}
+```
+
+**Process:**
+1. Calculate how many prestige cores you'll earn
+2. Reset character to base stats
+3. Add earned cores to your total
+4. Increment prestige level by 1
+
+<Info>
+Your **gold**, **prestige cores**, **prestige level**, and **prestige multipliers** are preserved when you prestige. Everything else resets.
+</Info>
+
+## Prestige requirements
+
+You must reach a minimum stage before you can prestige.
+
+### Minimum stage requirement
+
+From `calculatePrestigeCores()` (line 21):
+
+```typescript
+if (this.characterService.character().currentStage < 20) return 0;
+```
+
+<Warning>
+You must reach **stage 20** or higher to earn prestige cores. Prestiging before stage 20 gives you 0 cores and only increments your prestige level.
+</Warning>
+
+## Prestige core calculation
+
+Prestige cores are the primary currency earned from prestiging, used to purchase powerful prestige upgrades.
+
+### Base formula
+
+The core calculation uses a logarithmic formula:
+
+```typescript
+const prestigeCoreGain = Math.floor(
+  4 * Math.log10(this.characterService.character().currentStage)
+);
+```
+
+**Formula breakdown:**
+- Base multiplier: **4**
+- Scaling: **log₁₀(current stage)**
+- Result is floored to nearest integer
+
+### Core gain by stage
+
+Here's how many cores you earn at different stages:
+
+| Stage | log₁₀(stage) | Base Cores | With 50% Boost | With 100% Boost |
+|-------|--------------|------------|----------------|------------------|
+| 20    | 1.301        | 5          | 7              | 10               |
+| 30    | 1.477        | 5          | 8              | 11               |
+| 50    | 1.699        | 6          | 9              | 13               |
+| 100   | 2.000        | 8          | 12             | 16               |
+| 200   | 2.301        | 9          | 13             | 18               |
+| 500   | 2.699        | 10         | 15             | 21               |
+| 1000  | 3.000        | 12         | 18             | 24               |
+
+<Tip>
+The logarithmic formula means prestige core gains scale slowly. Going from stage 20 to 40 doubles your stage but only increases cores by 1-2.
+</Tip>
+
+### Prestige core multiplier
+
+Core gains can be boosted by the "Kaizen Mastery" prestige upgrade:
+
+```typescript
+const multiplier =
+  1 + this.prestigeUgpradeService.getTotalEffect(UpgradeEffectType.MULTIPLIER_BOOST);
+return Math.floor(prestigeCoreGain * multiplier);
+```
+
+<Accordion title="Kaizen Mastery upgrade">
+The "Kaizen Mastery" prestige upgrade increases core gain by **10% per level**.
+
+**Examples:**
+- Level 0: 1.0x multiplier (no bonus)
+- Level 1: 1.1x multiplier (+10%)
+- Level 5: 1.5x multiplier (+50%)
+- Level 10: 2.0x multiplier (+100%)
+
+At stage 100 with level 10 Kaizen Mastery:
+```
+Base cores = floor(4 * log₁₀(100)) = 8
+Multiplier = 1 + (0.1 * 10) = 2.0
+Final cores = floor(8 * 2.0) = 16
+```
+</Accordion>
+
+## Prestige level
+
+Your prestige level increases by **1** every time you prestige, regardless of stage or cores earned.
+
+### Prestige level in damage formula
+
+Prestige level is a direct multiplier in the damage calculation:
+
+```typescript
+let damage =
+  (character.baseStrength + goldBoosts) *
+  character.strengthModifier *
+  character.prestigeMultipliers.strength *
+  character.prestigeLevel; // Applied here
+```
+
+<Note>
+Prestige level 10 means your damage is multiplied by 10, even without any other prestige bonuses.
+</Note>
+
+## Prestige multipliers
+
+The `prestigeMultipliers` object contains separate multipliers for each stat:
+
+```typescript
+prestigeMultipliers: {
+  strength: 1,
+  intelligence: 1,
+  endurance: 1,
+}
+```
+
+These are preserved during character reset:
+
+```typescript
+resetCharacter() {
+  const currentChar = this.character();
+  this.character.set({
+    // ... base stats reset to 1 ...
+    prestigeMultipliers: currentChar.prestigeMultipliers, // Preserved
+    // ...
+  });
+}
+```
+
+<Info>
+Currently, prestige multipliers default to 1.0 and are not actively modified by the prestige system. They're included for potential future features that grant permanent stat multipliers.
+</Info>
+
+## What resets when you prestige
+
+Prestiging resets your character through `resetCharacter()` (line 54):
+
+<Tabs>
+  <Tab title="Reset to default">
+    These properties return to their starting values:
+    
+    - `level`: 1
+    - `baseStrength`: 1
+    - `baseIntelligence`: 1
+    - `baseEndurance`: 1
+    - `strengthModifier`: 1.0
+    - `intelligenceModifier`: 1.0
+    - `enduranceModifier`: 1.0
+    - `currentStage`: 1
+    - `currentWave`: 1
+    - `createdAt`: Current timestamp
+    - `lastActiveAt`: Current timestamp
+  </Tab>
+  <Tab title="Preserved">
+    These properties are kept across prestiges:
+    
+    - `prestigeLevel`: Incremented by 1
+    - `prestigeCores`: Previous total + newly earned
+    - `prestigeMultipliers`: All multipliers preserved
+    - `gold`: Current gold amount
+  </Tab>
+</Tabs>
+
+<Warning>
+All gold upgrades remain purchased after prestiging (they're tracked separately), but you restart from stage 1-1.
+</Warning>
+
+## Strategic considerations
+
+### When to prestige
+
+The logarithmic formula creates strategic depth:
+
+1. **Early game**: Prestige as soon as you reach stage 20 to start accumulating prestige level
+2. **Mid game**: Push to higher stages (50-100) for more cores per prestige
+3. **Late game**: Balance time investment vs. core gain
+
+<Tip>
+Going from stage 100 to 200 takes longer but only gives 1 extra core. Sometimes it's more efficient to prestige earlier and faster.
+</Tip>
+
+### Core spending vs. hoarding
+
+Prestige cores can be:
+- **Spent** on prestige upgrades for permanent bonuses
+- **Hoarded** to benefit from the "Hoarded Power" upgrade
+
+From the damage calculation:
+
+```typescript
+const dpsPerCore = this.prestigeUpgradeService.getTotalEffect(
+  UpgradeEffectType.DYNAMIC_PER_CORE
+);
+const unusedCores = character.prestigeCores;
+damage *= 1 + dpsPerCore * unusedCores;
+```
+
+**Hoarded Power** upgrade gives **2% DPS per unused core per level**:
+- Level 1: 2% DPS per core
+- Level 5: 10% DPS per core  
+- Level 10: 20% DPS per core
+
+With 50 unused cores and level 10 Hoarded Power:
+```
+Bonus = 1 + (0.02 * 10 * 50) = 1 + 10 = 11x damage
+```
+
+<Info>
+Hoarded Power creates an interesting trade-off: spend cores on upgrades for permanent progression, or save them for immediate power.
+</Info>
+
+## Prestige upgrades
+
+Prestige cores can be spent on permanent upgrades through the `PrestigeUpgradeService`. See the [prestige upgrades](/mechanics/upgrades#prestige-upgrades) section for details.
+
+### Available prestige upgrades
+
+- **Swift Strikes**: Reduce attack interval by 5% per level
+- **Titan's Power**: Increase strength by 1 per level
+- **Kaizen Mastery**: Increase core gain by 10% per level
+- **Fragile Foes**: Reduce enemy health by 5% per level
+- **Hoarded Power**: Gain 2% DPS per unused core per level
+
+<Note>
+Prestige upgrades are permanent and persist across all future prestiges. They're never reset.
+</Note>

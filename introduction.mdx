@@ -1,0 +1,138 @@
+---
+title: Introduction to Kaizen
+description: An incremental idle game built with Angular 21, featuring character progression, prestige systems, and real-time state persistence
+---
+
+# Introduction to Kaizen
+
+Kaizen is an incremental idle game developed to explore Angular's architecture and modern development practices. Built with Angular 21, it demonstrates disciplined, opinionated development with clean architecture principles.
+
+## What is Kaizen?
+
+Kaizen is an idle game where players progress through combat stages, earn gold and prestige cores, and purchase upgrades to enhance their character's capabilities. The game features:
+
+- **Real-time combat** with automated attacks and skill systems
+- **Character progression** through stats like strength, intelligence, and endurance
+- **Prestige mechanics** that allow players to reset progress for permanent multipliers
+- **Persistent state** with automatic saving to Convex backend
+- **Upgrade systems** with both gold-based and prestige-based purchases
+
+<CardGroup cols={2}>
+  <Card title="Quick start" icon="rocket" href="/quickstart">
+    Get the game running locally in minutes
+  </Card>
+  
+  <Card title="Architecture" icon="sitemap" href="/architecture">
+    Understand the Angular architecture and design patterns
+  </Card>
+  
+  <Card title="Services" icon="gears" href="/api/services/character-service">
+    Explore the service layer and dependency injection
+  </Card>
+  
+  <Card title="State management" icon="database" href="/development/state-management">
+    Learn about signals and real-time state persistence
+  </Card>
+</CardGroup>
+
+## Project goals
+
+Kaizen was created with specific learning objectives in mind:
+
+<Steps>
+  <Step title="Learning Angular">
+    Implementing Services, Dependency Injection, Authentication, and State Management using Angular's modern features
+  </Step>
+  
+  <Step title="Architecture over chaos">
+    Building clean, easy to read and refactor code wherever possible, following established patterns
+  </Step>
+  
+  <Step title="Professional standards">
+    Using GitFlow and Clean Code Principles for maintainable, production-ready code
+  </Step>
+</Steps>
+
+## Tech stack
+
+Kaizen leverages modern web technologies to provide a robust development experience:
+
+- **Frontend:** Angular 21 with standalone components
+- **Language:** TypeScript for type safety
+- **BaaS:** Convex for real-time database and serverless functions
+- **Auth:** Clerk for user authentication
+- **Styling:** TailwindCSS for utility-first styling
+- **UI Components:** PrimeNG for Angular components
+
+<Note>
+  Kaizen uses Angular 21's standalone components exclusively, eliminating the need for NgModules and simplifying the component architecture.
+</Note>
+
+## Key features
+
+### Combat system
+
+Players engage in automated combat with enemies that scale in difficulty:
+
+```typescript
+performAttack() {
+  let attackAmount = this.calculateDamage();
+  if (this.criticalHit()) {
+    attackAmount *=
+      2 + this.goldUpgradeService.getTotalEffect(UpgradeEffectType.CRITICAL_DAMAGE_BOOST);
+  }
+  const remainingHP = Math.max(0, Math.floor(this.enemyHP() - attackAmount));
+  const defeated = remainingHP === 0;
+  this.enemyHP.set(remainingHP);
+  if (defeated) {
+    this.handleEnemyDefeat();
+  }
+}
+```
+
+### Prestige system
+
+When players reach stage 20 or higher, they can prestige to earn cores:
+
+```typescript
+calculatePrestigeCores() {
+  if (this.characterService.character().currentStage < 20) return 0;
+  const prestigeCoreGain = Math.floor(
+    4 * Math.log10(this.characterService.character().currentStage)
+  );
+  const multiplier =
+    1 + this.prestigeUgpradeService.getTotalEffect(UpgradeEffectType.MULTIPLIER_BOOST);
+  return Math.floor(prestigeCoreGain * multiplier);
+}
+```
+
+### Auto-save functionality
+
+The game automatically saves progress every 5 minutes:
+
+```typescript
+startAutoSave() {
+  this.saveIntervalID = setInterval(() => {
+    this.checkAndSave();
+  }, this.AUTO_SAVE_INTERVAL);
+
+  this.checkAndSave();
+}
+
+checkAndSave() {
+  const currentGameState = this.GameStateService.getState();
+
+  if (JSON.stringify(currentGameState) !== JSON.stringify(this.lastSavedGameState)) {
+    this.GameStateService.pushUpdatesToDatabase();
+    this.lastSavedGameState = currentGameState;
+  }
+}
+```
+
+<Tip>
+  The auto-save system only persists state when changes are detected, reducing unnecessary database writes.
+</Tip>
+
+## Next steps
+
+Ready to get started? Check out the [Quick start guide](/quickstart) to run Kaizen locally, or dive into the [Architecture overview](/architecture) to understand how the application is structured.

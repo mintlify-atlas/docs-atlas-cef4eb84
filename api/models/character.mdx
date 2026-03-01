@@ -1,0 +1,228 @@
+---
+title: Character
+description: Core character model representing player state and progression
+---
+
+The `Character` interface is the central data model in Kaizen, representing the player's current state, stats, progression, and prestige data.
+
+## Interface definition
+
+```typescript
+export interface Character {
+  id: string;
+  name: string;
+  level: number;
+
+  baseStrength: number;
+  baseIntelligence: number;
+  baseEndurance: number;
+
+  strengthModifier: number;
+  intelligenceModifier: number;
+  enduranceModifier: number;
+
+  prestigeLevel: number;
+  prestigeMultipliers: {
+    strength: number;
+    intelligence: number;
+    endurance: number;
+  };
+  prestigeCores: number;
+
+  gold: number;
+
+  currentStage: number;
+  currentWave: number;
+
+  createdAt: Date;
+  lastActiveAt: Date;
+}
+```
+
+## Properties
+
+### Identity
+
+<ResponseField name="id" type="string" required>
+  Unique identifier for the character
+</ResponseField>
+
+<ResponseField name="name" type="string" required>
+  Display name of the character (defaults to "Hero")
+</ResponseField>
+
+<ResponseField name="level" type="number" required>
+  Current character level
+</ResponseField>
+
+### Base stats
+
+<ResponseField name="baseStrength" type="number" required>
+  Base strength stat value, affects physical damage output
+</ResponseField>
+
+<ResponseField name="baseIntelligence" type="number" required>
+  Base intelligence stat value, affects magical damage output
+</ResponseField>
+
+<ResponseField name="baseEndurance" type="number" required>
+  Base endurance stat value, affects health and survivability
+</ResponseField>
+
+### Stat modifiers
+
+<ResponseField name="strengthModifier" type="number" required>
+  Multiplier applied to base strength from upgrades and effects
+</ResponseField>
+
+<ResponseField name="intelligenceModifier" type="number" required>
+  Multiplier applied to base intelligence from upgrades and effects
+</ResponseField>
+
+<ResponseField name="enduranceModifier" type="number" required>
+  Multiplier applied to base endurance from upgrades and effects
+</ResponseField>
+
+### Prestige system
+
+<ResponseField name="prestigeLevel" type="number" required>
+  Number of times the character has prestiged (reset with bonuses)
+</ResponseField>
+
+<ResponseField name="prestigeMultipliers" type="object" required>
+  Permanent multipliers earned through prestige that affect each stat
+  
+  <Expandable title="properties">
+    <ResponseField name="strength" type="number">
+      Permanent strength multiplier from prestige
+    </ResponseField>
+    <ResponseField name="intelligence" type="number">
+      Permanent intelligence multiplier from prestige
+    </ResponseField>
+    <ResponseField name="endurance" type="number">
+      Permanent endurance multiplier from prestige
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="prestigeCores" type="number" required>
+  Premium currency earned through prestiging, used for prestige upgrades
+</ResponseField>
+
+### Economy
+
+<ResponseField name="gold" type="number" required>
+  Current gold amount, earned through combat and spent on gold upgrades
+</ResponseField>
+
+### Campaign progress
+
+<ResponseField name="currentStage" type="number" required>
+  Current stage number in the campaign (advances every 10 waves)
+</ResponseField>
+
+<ResponseField name="currentWave" type="number" required>
+  Current wave number within the stage (1-10)
+</ResponseField>
+
+### Timestamps
+
+<ResponseField name="createdAt" type="Date" required>
+  Timestamp when the character was created
+</ResponseField>
+
+<ResponseField name="lastActiveAt" type="Date" required>
+  Timestamp of the character's last activity
+</ResponseField>
+
+## Usage example
+
+### Creating a default character
+
+```typescript
+const defaultCharacter: Character = {
+  id: '1',
+  name: 'Hero',
+  level: 1,
+  baseStrength: 1,
+  baseIntelligence: 1,
+  baseEndurance: 1,
+  strengthModifier: 1,
+  intelligenceModifier: 1,
+  enduranceModifier: 1,
+  prestigeLevel: 1,
+  prestigeMultipliers: {
+    strength: 1,
+    intelligence: 1,
+    endurance: 1,
+  },
+  prestigeCores: 0,
+  gold: 0,
+  currentStage: 1,
+  currentWave: 1,
+  createdAt: new Date(),
+  lastActiveAt: new Date(),
+};
+```
+
+### Modifying character stats
+
+```typescript
+// Increase gold
+character.update((char) => ({
+  ...char,
+  gold: char.gold + 100
+}));
+
+// Advance to next wave
+character.update((char) => ({
+  ...char,
+  currentWave: char.currentWave < 10 ? char.currentWave + 1 : 1,
+  currentStage: char.currentWave === 10 ? char.currentStage + 1 : char.currentStage
+}));
+```
+
+### Prestige reset
+
+```typescript
+// Reset character while preserving prestige progress
+const resetCharacter = (currentChar: Character): Character => ({
+  id: '1',
+  name: 'Hero',
+  level: 1,
+  baseStrength: 1,
+  baseIntelligence: 1,
+  baseEndurance: 1,
+  strengthModifier: 1,
+  intelligenceModifier: 1,
+  enduranceModifier: 1,
+  prestigeLevel: currentChar.prestigeLevel,        // Preserved
+  prestigeMultipliers: currentChar.prestigeMultipliers, // Preserved
+  prestigeCores: currentChar.prestigeCores,        // Preserved
+  gold: currentChar.gold,                          // Preserved
+  currentStage: 1,
+  currentWave: 1,
+  createdAt: new Date(),
+  lastActiveAt: new Date(),
+});
+```
+
+## Related services
+
+- [CharacterService](/api/services/character-service) - Manages character state and provides methods for stat modification
+- [PrestigeService](/api/services/prestige-service) - Handles prestige mechanics and character resets
+- [CombatService](/api/services/combat-service) - Uses character stats for combat calculations
+
+<Note>
+  When resetting a character through prestige, the following fields are preserved:
+  - `prestigeLevel`
+  - `prestigeMultipliers`
+  - `prestigeCores`
+  - `gold`
+  
+  All other stats are reset to their default values.
+</Note>
+
+<Info>
+  The character state is persisted to the database through the `CharacterService.updateDatabase()` method, which selectively saves only the fields that need server-side persistence.
+</Info>

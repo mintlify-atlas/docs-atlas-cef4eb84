@@ -1,0 +1,213 @@
+---
+title: Milestone
+description: Achievement-based milestone system for tracking player accomplishments
+---
+
+The `Milestone` interface represents achievement-style goals that players can complete to earn rewards. Milestones track specific stat requirements and provide bonuses when achieved.
+
+## Interface definition
+
+```typescript
+export interface Milestone {
+  id: string;
+  type: 'Strength' | 'Intelligence' | 'Endurance';
+  requirement: string;
+  reward: number;
+  achieved: boolean;
+  achievedAt?: Date;
+  level: number;
+}
+```
+
+## Properties
+
+<ResponseField name="id" type="string" required>
+  Unique identifier for the milestone
+</ResponseField>
+
+<ResponseField name="type" type="'Strength' | 'Intelligence' | 'Endurance'" required>
+  Which stat this milestone is associated with. Determines both the requirement type and the reward type.
+</ResponseField>
+
+<ResponseField name="requirement" type="string" required>
+  Human-readable description of what must be accomplished to achieve this milestone (e.g., "Reach 100 Strength")
+</ResponseField>
+
+<ResponseField name="reward" type="number" required>
+  Numeric value of the reward granted when this milestone is achieved. The reward type matches the milestone type.
+</ResponseField>
+
+<ResponseField name="achieved" type="boolean" required>
+  Whether this milestone has been completed by the player
+</ResponseField>
+
+<ResponseField name="achievedAt" type="Date">
+  Timestamp when the milestone was achieved. Only present if `achieved` is true.
+</ResponseField>
+
+<ResponseField name="level" type="number" required>
+  The tier or level of this milestone. Higher levels typically have higher requirements and rewards.
+</ResponseField>
+
+## Usage examples
+
+### Creating a milestone
+
+```typescript
+const strengthMilestone: Milestone = {
+  id: 'strength_milestone_1',
+  type: 'Strength',
+  requirement: 'Reach 100 Strength',
+  reward: 10,
+  achieved: false,
+  level: 1,
+};
+```
+
+### Checking milestone completion
+
+```typescript
+function checkMilestone(
+  milestone: Milestone,
+  currentStat: number
+): boolean {
+  // Extract target value from requirement string
+  const targetMatch = milestone.requirement.match(/\d+/);
+  if (!targetMatch) return false;
+  
+  const targetValue = parseInt(targetMatch[0]);
+  return currentStat >= targetValue;
+}
+
+// Check if player has met the requirement
+const character = { baseStrength: 150 };
+const isComplete = checkMilestone(strengthMilestone, character.baseStrength);
+// true - player has 150 strength, milestone requires 100
+```
+
+### Awarding a milestone
+
+```typescript
+function awardMilestone(milestone: Milestone): Milestone {
+  if (milestone.achieved) {
+    return milestone; // Already awarded
+  }
+  
+  return {
+    ...milestone,
+    achieved: true,
+    achievedAt: new Date(),
+  };
+}
+
+const completedMilestone = awardMilestone(strengthMilestone);
+// { ...milestone, achieved: true, achievedAt: Date }
+```
+
+### Filtering milestones by type
+
+```typescript
+function getMilestonesByType(
+  milestones: Milestone[],
+  type: Milestone['type']
+): Milestone[] {
+  return milestones.filter((m) => m.type === type);
+}
+
+const strengthMilestones = getMilestonesByType(allMilestones, 'Strength');
+const intelligenceMilestones = getMilestonesByType(allMilestones, 'Intelligence');
+```
+
+### Getting total rewards earned
+
+```typescript
+function getTotalRewards(
+  milestones: Milestone[],
+  type?: Milestone['type']
+): number {
+  return milestones
+    .filter((m) => m.achieved && (!type || m.type === type))
+    .reduce((total, m) => total + m.reward, 0);
+}
+
+// Get total strength rewards earned
+const totalStrengthRewards = getTotalRewards(milestones, 'Strength');
+
+// Get all rewards earned across all types
+const allRewards = getTotalRewards(milestones);
+```
+
+### Sorting milestones by progress
+
+```typescript
+function sortMilestonesByProgress(
+  milestones: Milestone[]
+): Milestone[] {
+  return [...milestones].sort((a, b) => {
+    // Incomplete first
+    if (a.achieved !== b.achieved) {
+      return a.achieved ? 1 : -1;
+    }
+    // Then by level
+    return a.level - b.level;
+  });
+}
+```
+
+### Creating milestone tiers
+
+```typescript
+const strengthMilestoneTiers: Milestone[] = [
+  {
+    id: 'strength_1',
+    type: 'Strength',
+    requirement: 'Reach 100 Strength',
+    reward: 10,
+    achieved: false,
+    level: 1,
+  },
+  {
+    id: 'strength_2',
+    type: 'Strength',
+    requirement: 'Reach 500 Strength',
+    reward: 25,
+    achieved: false,
+    level: 2,
+  },
+  {
+    id: 'strength_3',
+    type: 'Strength',
+    requirement: 'Reach 1000 Strength',
+    reward: 50,
+    achieved: false,
+    level: 3,
+  },
+];
+```
+
+## Related services
+
+- [MilestoneService](/mechanics/milestones) - Manages milestone state and persistence
+- [CharacterService](/api/services/character-service) - Provides stat values for milestone checking
+
+<Info>
+  Milestones are persisted to localStorage through the `MilestoneService`. The service automatically saves milestone state whenever it changes.
+</Info>
+
+<Note>
+  The milestone system is designed to be extensible. While currently limited to stat-based milestones (Strength, Intelligence, Endurance), the structure supports adding new milestone types in the future.
+</Note>
+
+## Milestone types
+
+The three milestone types correspond to character stats:
+
+| Type | Requirement | Reward Effect |
+|------|-------------|---------------|
+| `Strength` | Reach X Strength | Bonus strength points |
+| `Intelligence` | Reach X Intelligence | Bonus intelligence points |
+| `Endurance` | Reach X Endurance | Bonus endurance points |
+
+<Note>
+  Milestone rewards are typically permanent bonuses that persist through prestige resets, making them valuable long-term progression goals.
+</Note>

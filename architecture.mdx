@@ -1,0 +1,504 @@
+---
+title: Architecture overview
+description: Understanding the Angular architecture, services, dependency injection, and state management patterns in Kaizen
+---
+
+# Architecture overview
+
+Kaizen is built with Angular 21, leveraging modern features like standalone components, signals for reactive state, and dependency injection for service management. This guide explores the architectural decisions and patterns used throughout the application.
+
+## Project structure
+
+The application follows a clean, organized structure:
+
+```
+src/
+├── app/
+│   ├── components/          # Reusable UI components
+│   │   ├── navbar/
+│   │   └── prestige-upgrade-card/
+│   ├── models/              # TypeScript interfaces
+│   │   ├── character.model.ts
+│   │   ├── milestone.model.ts
+│   │   └── prestige.model.ts
+│   ├── pages/               # Route components
+│   │   ├── auth/
+│   │   ├── campaign/
+│   │   ├── character/
+│   │   ├── dashboard/
+│   │   └── milestones/
+│   ├── services/            # Business logic layer
+│   │   ├── character-service.ts
+│   │   ├── combat-service.ts
+│   │   ├── autosave-service.ts
+│   │   └── gamestate-service.ts
+│   ├── app.config.ts        # Application configuration
+│   ├── app.routes.ts        # Route definitions
+│   └── app.ts               # Root component
+├── environments/            # Environment configs
+└── main.ts                  # Application bootstrap
+```
+
+## Standalone components
+
+Kaizen exclusively uses Angular 21's standalone components, eliminating the need for NgModules:
+
+```typescript
+import { Component, inject } from '@angular/core';
+import { CharacterService } from '../../services/character-service';
+import { Character } from '../../models/character.model';
+
+@Component({
+  selector: 'app-dashboard',
+  imports: [],
+  templateUrl: './dashboard.html',
+})
+export class Dashboard {
+  characterService = inject(CharacterService);
+  get character() {
+    return this.characterService.character;
+  }
+}
+```
+
+<Note>
+  The `standalone: true` option is now the default in Angular 21 when using schematics, as configured in `angular.json:9-12`.
+</Note>
+
+## Application bootstrap
+
+The application bootstraps with a functional configuration approach:
+
+```typescript
+import { bootstrapApplication } from '@angular/platform-browser';
+import { appConfig } from './app/app.config';
+import { App } from './app/app';
+
+bootstrapApplication(App, appConfig)
+  .catch((err) => console.error(err));
+```
+
+### Application configuration
+
+All providers are defined in `app.config.ts` using functional providers:
+
+```typescript
+export const appConfig: ApplicationConfig = {
+  providers: [
+    provideBrowserGlobalErrorListeners(),
+    provideZoneChangeDetection({ eventCoalescing: true }),
+    provideRouter(routes),
+    provideConvex(environment.convexPublicUrl),
+    { provide: CLERK_AUTH, useClass: ClerkAuthService },
+    provideClerkAuth(),
+    { provide: CONVEX_AUTH_GUARD_CONFIG, useValue: { loginRoute: '/auth/login' } },
+  ],
+};
+```
+
+This configuration includes:
+- **Error handling** with global error listeners
+- **Change detection** with event coalescing for performance
+- **Routing** with lazy-loaded components
+- **Convex** for real-time backend
+- **Clerk** for authentication with custom service
+- **Auth guards** to protect routes
+
+## Routing architecture
+
+Kaizen uses lazy-loaded routes with authentication guards:
+
+```typescript
+export const routes: Routes = [
+  { path: '', redirectTo: 'dashboard', pathMatch: 'full' },
+  {
+    path: 'dashboard',
+    loadComponent: () => {
+      return import('./pages/dashboard/dashboard').then((m) => m.Dashboard);
+    },
+    canActivate: [convexAuthGuard],
+  },
+  {
+    path: 'character',
+    loadComponent: () => {
+      return import('./pages/character/character').then((m) => m.Character);
+    },
+    canActivate: [convexAuthGuard],
+  },
+  {
+    path: 'auth/login',
+    loadComponent: () => {
+      return import('./pages/auth/login/login').then((m) => m.Login);
+    },
+  },
+];
+```
+
+<Tip>
+  Lazy loading reduces the initial bundle size by only loading route components when they're accessed.
+</Tip>
+
+## Service layer architecture
+
+Kaizen's business logic resides in a well-structured service layer. All services use Angular's `providedIn: 'root'` for singleton instances.
+
+### Character service
+
+The `CharacterService` manages character state using Angular signals:
+
+```typescript
+@Injectable({
+  providedIn: 'root',
+})
+export class CharacterService {
+  character = signal<Character>(this.returnDefaultCharacter());
+
+  private getCharacterFromDatabase = injectQuery(api.character.getCharacter, () => ({}));
+  private databaseUpdateMutation = injectMutation(api.character.updateCharacter);
+  hasLoadedFromDb = signal(false);
+
+  constructor() {
+    const defaultCharacter = this.returnDefaultCharacter();
+    effect(() => {
+      const dbCharacter = this.getCharacterFromDatabase.data();
+      if (!dbCharacter) return;
+      if (this.hasLoadedFromDb()) {
+        this.character.update((char) => ({
+          ...char,
+          ...dbCharacter,
+        }));
+      } else {
+        const merged = { ...defaultCharacter, ...dbCharacter };
+        this.character.set(merged);
+        this.hasLoadedFromDb.set(true);
+      }
+    });
+  }
+}
+```
+
+Key patterns:
+- **Signals** for reactive state management
+- **Effects** for synchronizing with the database
+- **Convex queries** for real-time data
+- **Mutations** for persisting changes
+
+### Game state service
+
+The `GameStateService` orchestrates multiple services:
+
+```typescript
+@Injectable({
+  providedIn: 'root',
+})
+export class GameStateService {
+  constructor(
+    public goldUpgradeService: GoldUpgradeService,
+    public prestigeUpgradeService: PrestigeUpgradeService,
+    public characterService: CharacterService,
+  ) {}
+
+  getState(): GameState {
+    return {
+      goldUpgrades: this.goldUpgradeService.allUpgrades(),
+      prestigeUpgrades: this.prestigeUpgradeService.allUpgrades(),
+      character: this.characterService.character(),
+    };
+  }
+
+  pushUpdatesToDatabase() {
+    this.goldUpgradeService.updateDatabase();
+    this.prestigeUpgradeService.updateDatabase();
+    this.characterService.updateDatabase();
+  }
+}
+```
+
+<Info>
+  This service acts as a facade, providing a unified interface for managing the entire game state.
+</Info>
+
+### Combat service
+
+The `CombatService` handles all combat mechanics:
+
+```typescript
+@Injectable({
+  providedIn: 'root',
+})
+export class CombatService {
+  characterService = inject(CharacterService);
+  prestigeUpgradeService = inject(PrestigeUpgradeService);
+  goldUpgradeService = inject(GoldUpgradeService);
+  
+  isFighting = signal(false);
+  enemyHP = signal(this.calculateEnemyHP());
+  isSwiftAttacking = signal(false);
+
+  startFighting() {
+    this.isFighting.set(true);
+    this.performAttack();
+    this.fightIntervalID = setTimeout(() => {
+      this.startFighting();
+    }, this.calculateAttackSpeed());
+  }
+
+  calculateDamage(): number {
+    const character = this.characterService.character();
+    let damage =
+      (character.baseStrength +
+        this.goldUpgradeService.getTotalEffect(UpgradeEffectType.FLAT_STAT_BOOST)) *
+      character.strengthModifier *
+      character.prestigeMultipliers.strength *
+      character.prestigeLevel;
+
+    const strengthBoost = this.prestigeUpgradeService.getTotalEffect(
+      UpgradeEffectType.FLAT_STAT_BOOST
+    );
+    damage *= 1 + strengthBoost;
+
+    return Math.floor(damage);
+  }
+}
+```
+
+## Dependency injection patterns
+
+Kaizen uses Angular's dependency injection extensively:
+
+### Constructor injection (traditional)
+
+```typescript
+export class App implements OnDestroy {
+  constructor(private autoSaveService: AutoSaveService) {}
+
+  ngOnDestroy() {
+    this.autoSaveService.stopAutoSave();
+  }
+}
+```
+
+### inject() function (modern)
+
+```typescript
+export class CombatService {
+  characterService = inject(CharacterService);
+  prestigeUpgradeService = inject(PrestigeUpgradeService);
+  goldUpgradeService = inject(GoldUpgradeService);
+}
+```
+
+<Note>
+  The `inject()` function is the modern approach in Angular, providing better type inference and flexibility.
+</Note>
+
+## State management with signals
+
+Kaizen uses Angular signals for reactive state management without external libraries:
+
+```typescript
+character = signal<Character>(this.returnDefaultCharacter());
+
+// Computed values work automatically
+get character() {
+  return this.characterService.character;
+}
+
+// Update state immutably
+this.character.update((char) => ({
+  ...char,
+  gold: char.gold + amount
+}));
+
+// React to changes with effects
+effect(() => {
+  const dbCharacter = this.getCharacterFromDatabase.data();
+  if (!dbCharacter) return;
+  this.character.set(merged);
+});
+```
+
+### Benefits of signals
+
+- **Fine-grained reactivity** - Only updates when values change
+- **Better performance** - Automatic change detection optimization
+- **Type safety** - Full TypeScript support
+- **No subscriptions** - No manual cleanup required
+
+## Base service pattern
+
+Kaizen uses abstract base classes for common service logic:
+
+```typescript
+@Injectable()
+export abstract class BaseUpgradeService<
+  T extends { id: string; currentLevel: number; effectType: UpgradeEffectType },
+> {
+  protected upgrades = signal<T[]>([]);
+  readonly allUpgrades = this.upgrades.asReadonly();
+  hasLoadedFromDb = signal(false);
+
+  protected abstract getCurrentCurrency(): number;
+  protected abstract spendCurrency(amount: number): void;
+  public abstract updateDatabase(): void;
+
+  purchaseUpgrade(upgradeID: string): boolean {
+    if (!this.canPurchase(upgradeID)) return false;
+
+    const upgrade = this.getUpgradeByID(upgradeID) as any;
+    const cost = this.calculateCost(upgrade);
+    this.spendCurrency(cost);
+    this.upgrades.update((upgrades) =>
+      upgrades.map((u) => (u.id === upgradeID ? { ...u, currentLevel: u.currentLevel + 1 } : u)),
+    );
+    return true;
+  }
+}
+```
+
+<Tip>
+  This pattern eliminates code duplication between `GoldUpgradeService` and `PrestigeUpgradeService`.
+</Tip>
+
+## Real-time persistence
+
+Kaizen integrates with Convex for real-time database synchronization:
+
+### Convex schema
+
+```typescript
+export default defineSchema({
+  users: defineTable({
+    name: v.string(),
+    tokenIdentifier: v.string(),
+  }).index('by_token', ['tokenIdentifier']),
+
+  character: defineTable({
+    id: v.string(),
+    userId: v.id('users'),
+    prestigeLevel: v.number(),
+    prestigeMultipliers: v.object({
+      strength: v.number(),
+      intelligence: v.number(),
+      endurance: v.number(),
+    }),
+    prestigeCores: v.number(),
+    gold: v.number(),
+    currentStage: v.number(),
+    currentWave: v.number(),
+  })
+    .index('by_user', ['userId'])
+    .index('by_user_and_id', ['userId', 'id']),
+});
+```
+
+### Auto-save service
+
+The `AutoSaveService` periodically saves state to Convex:
+
+```typescript
+@Injectable({
+  providedIn: 'root',
+})
+export class AutoSaveService {
+  private saveIntervalID: number | undefined;
+  private lastSavedGameState: GameState | undefined;
+  
+  AUTO_SAVE_INTERVAL = 300000; // 5 minutes
+
+  constructor(private GameStateService: GameStateService) {
+    effect(() => {
+      if (this.autoSaveHasStarted) return;
+      if (this.GameStateService.characterService.hasLoadedFromDb()) {
+        this.startAutoSave();
+        this.autoSaveHasStarted = true;
+      }
+    });
+  }
+
+  checkAndSave() {
+    const currentGameState = this.GameStateService.getState();
+
+    if (JSON.stringify(currentGameState) !== JSON.stringify(this.lastSavedGameState)) {
+      this.GameStateService.pushUpdatesToDatabase();
+      this.lastSavedGameState = currentGameState;
+    }
+  }
+}
+```
+
+<Warning>
+  The auto-save service is instantiated in the root component to ensure it starts when the app loads.
+</Warning>
+
+## Type safety with models
+
+Kaizen uses TypeScript interfaces to ensure type safety:
+
+```typescript
+export interface Character {
+  id: string;
+  name: string;
+  level: number;
+
+  baseStrength: number;
+  baseIntelligence: number;
+  baseEndurance: number;
+
+  strengthModifier: number;
+  intelligenceModifier: number;
+  enduranceModifier: number;
+
+  prestigeLevel: number;
+  prestigeMultipliers: {
+    strength: number;
+    intelligence: number;
+    endurance: number;
+  };
+  prestigeCores: number;
+
+  gold: number;
+
+  currentStage: number;
+  currentWave: number;
+
+  createdAt: Date;
+  lastActiveAt: Date;
+}
+```
+
+```typescript
+export interface Upgrade {
+  id: string;
+  name: string;
+  description: string;
+
+  baseCost: number;
+  costScaling: number;
+
+  effectType: UpgradeEffectType;
+  effectValue: number;
+  effectScaling: UpgradeScalingType;
+
+  currentLevel: number;
+}
+
+export enum UpgradeEffectType {
+  FLAT_STAT_BOOST = 'flat_stat_boost',
+  MULTIPLIER_BOOST = 'multiplier_boost',
+  ATTACK_SPEED = 'attack_speed',
+  ENEMY_HEALTH_REDUCTION = 'enemy_health_reduction',
+  DYNAMIC_PER_CORE = 'dynamic_per_core',
+  CRITICAL_CHANCE_BOOST = 'critical_chance_boost',
+  CRITICAL_DAMAGE_BOOST = 'critical_damage_boost',
+}
+```
+
+## Next steps
+
+Now that you understand the architecture:
+
+- Explore individual services to see specific implementations
+- Review the component structure to understand the UI layer
+- Check out the Convex functions to see backend logic
+- Learn about the prestige mechanics and upgrade calculations

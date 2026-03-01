@@ -1,80 +1,210 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: Quickstart
+description: Get Kaizen up and running in under 5 minutes
 ---
 
-## Get started in three steps
+Get your local development environment set up and start building with Kaizen's incremental idle game architecture.
 
-Get your documentation site running locally and make your first customization.
+## Prerequisites
 
-### Step 1: Set up your local environment
+Before you begin, ensure you have the following installed:
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
+- **Node.js** 18.x or higher
+- **pnpm** 8.x or higher (recommended package manager)
+- **Git** for cloning the repository
 
-### Step 2: Deploy your changes
+<Info>
+  Kaizen uses pnpm for faster, more efficient dependency management. If you don't have it installed, run `npm install -g pnpm`.
+</Info>
 
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
+## Installation
 
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
+<Steps>
+  <Step title="Clone the repository">
+    Clone the Kaizen repository to your local machine:
 
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
+    ```bash
+    git clone https://github.com/yourusername/kaizen.git
+    cd kaizen
+    ```
+  </Step>
 
-### Step 3: Go live
+  <Step title="Install dependencies">
+    Install all required packages using pnpm:
 
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
+    ```bash
+    pnpm install
+    ```
+
+    This will install the core dependencies including:
+    - **Angular 21** - Frontend framework
+    - **Convex** - Real-time backend and database
+    - **Clerk** - Authentication provider
+    - **PrimeNG** - UI component library
+    - **TailwindCSS** - Utility-first styling
+  </Step>
+
+  <Step title="Set up environment variables">
+    Create an environment configuration file for development:
+
+    ```bash
+    touch src/environments/environment.development.ts
+    ```
+
+    Add your Convex and Clerk credentials:
+
+    ```typescript src/environments/environment.development.ts
+    export const environment = {
+      convexPublicUrl: 'https://your-deployment.convex.cloud',
+      clerkPublicKey: 'pk_test_your_clerk_publishable_key',
+    };
+    ```
+
+    <Warning>
+      Never commit your environment files to version control. The `src/environments/` directory is already gitignored.
+    </Warning>
+  </Step>
+
+  <Step title="Configure Convex backend">
+    Initialize and deploy your Convex backend:
+
+    ```bash
+    npx convex dev
+    ```
+
+    This command will:
+    1. Create a new Convex project (if you haven't already)
+    2. Generate your Convex deployment URL
+    3. Start watching for backend changes
+    4. Sync your schema and functions to the cloud
+
+    <Note>
+      Keep the `convex dev` process running in a separate terminal. It enables hot-reloading for your backend functions.
+    </Note>
+
+    Copy the deployment URL from the output and update your `environment.development.ts` file with the `convexPublicUrl` value.
+  </Step>
+
+  <Step title="Configure Clerk authentication">
+    Set up Clerk to handle user authentication:
+
+    1. Create a free account at [clerk.com](https://clerk.com)
+    2. Create a new application
+    3. Copy your **Publishable Key** and add it to `environment.development.ts`
+    4. In the Clerk dashboard, navigate to **JWT Templates**
+    5. Create a new template named `convex`
+    6. Copy the **Issuer URL** from the template
+
+    Add the Clerk JWT issuer to your Convex deployment:
+
+    ```bash
+    npx convex env set CLERK_JWT_ISSUER_DOMAIN "your-clerk-issuer-url"
+    ```
+
+    <Info>
+      The Convex auth configuration in `convex/auth.config.ts` uses this environment variable to validate JWTs from Clerk.
+    </Info>
+  </Step>
+
+  <Step title="Start the development server">
+    With Convex running in one terminal, start the Angular development server in another:
+
+    ```bash
+    pnpm start
+    ```
+
+    Or use the Angular CLI directly:
+
+    ```bash
+    ng serve
+    ```
+
+    The application will be available at `http://localhost:4200`.
+  </Step>
+</Steps>
+
+## Verify your setup
+
+Once the development server is running, open your browser to `http://localhost:4200`. You should see:
+
+1. The Kaizen landing page or authentication prompt
+2. Clerk authentication working (sign up/sign in buttons functional)
+3. No console errors related to Convex or Clerk connections
+
+<Note>
+  On first run, you'll need to create an account to access the game. Clerk handles all authentication flows including email verification.
+</Note>
+
+## Available scripts
+
+Kaizen includes several npm scripts for common development tasks:
+
+| Command | Description |
+|---------|-------------|
+| `pnpm start` | Start the development server on port 4200 |
+| `pnpm build` | Build the production bundle |
+| `pnpm watch` | Build and watch for changes in development mode |
+| `pnpm test` | Run the Jasmine/Karma test suite |
+
+## Project structure
+
+```
+kaizen/
+├── src/
+│   ├── app/              # Angular application code
+│   │   ├── components/   # Reusable UI components
+│   │   ├── services/     # Business logic and state management
+│   │   └── routes/       # Route definitions
+│   └── environments/     # Environment configurations (gitignored)
+├── convex/
+│   ├── schema.ts         # Database schema definitions
+│   ├── character.ts      # Character progression functions
+│   ├── goldUpgrades.ts   # Gold upgrade mutations
+│   ├── prestigeUpgrades.ts # Prestige system functions
+│   └── auth.config.ts    # Clerk authentication config
+└── public/               # Static assets
+```
 
 ## Next steps
 
-Now that you have your docs running, explore these key features:
+Now that your development environment is ready:
 
 <CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
+  <Card title="Architecture" icon="book" href="/architecture">
+    Learn about Kaizen's architecture and game mechanics
+  </Card>
+  
+  <Card title="Game mechanics" icon="gamepad" href="/mechanics/combat">
+    Explore character progression, upgrades, and prestige
+  </Card>
+  
+  <Card title="State management" icon="database" href="/development/state-management">
+    Understand how Convex powers real-time game state
+  </Card>
+  
+  <Card title="Backend integration" icon="lock" href="/development/backend-integration">
+    Deep dive into Clerk integration and user management
+  </Card>
 </CardGroup>
 
-<Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
-</Note>
+## Troubleshooting
+
+### Convex connection failed
+
+If you see errors about Convex connection failures:
+- Ensure `convex dev` is running in a separate terminal
+- Verify the `convexPublicUrl` in your environment file matches your deployment URL
+- Check that your deployment is active in the [Convex dashboard](https://dashboard.convex.dev)
+
+### Clerk authentication not working
+
+If authentication doesn't work:
+- Verify your `clerkPublicKey` is correct and starts with `pk_test_` or `pk_live_`
+- Ensure you've created the `convex` JWT template in Clerk
+- Confirm the `CLERK_JWT_ISSUER_DOMAIN` environment variable is set in Convex
+
+### Port already in use
+
+If port 4200 is already in use:
+- Stop other Angular applications running on that port
+- Or specify a different port: `ng serve --port 4201`

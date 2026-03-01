@@ -1,0 +1,374 @@
+---
+title: Project structure
+description: Understanding Kaizen's file and folder organization
+---
+
+Kaizen follows Angular's recommended project structure with clear separation between frontend, backend, and configuration files.
+
+## Overview
+
+```
+kaizen/
+├── src/                    # Angular application source
+│   ├── app/               # Application code
+│   ├── environments/      # Environment configurations
+│   ├── main.ts           # Application entry point
+│   └── styles.css        # Global styles
+├── convex/                # Backend functions and schema
+├── public/                # Static assets
+├── angular.json           # Angular CLI configuration
+├── package.json          # Dependencies and scripts
+└── tsconfig.json         # TypeScript configuration
+```
+
+## Source directory (`src/`)
+
+### Application structure (`src/app/`)
+
+The main application code is organized by feature and function:
+
+```
+src/app/
+├── components/           # Reusable UI components
+│   ├── navbar/
+│   └── prestige-upgrade-card/
+├── models/              # TypeScript interfaces and types
+│   ├── character.model.ts
+│   ├── milestone.model.ts
+│   └── prestige.model.ts
+├── pages/               # Route-level components
+│   ├── auth/
+│   │   └── login/
+│   ├── campaign/
+│   ├── character/
+│   ├── dashboard/
+│   └── milestones/
+├── services/            # Business logic and state
+│   ├── autosave-service.ts
+│   ├── character-service.ts
+│   ├── clerk-auth.service.ts
+│   ├── clerk.service.ts
+│   ├── combat-service.ts
+│   ├── gamestate-service.ts
+│   ├── gold-upgrade-service.ts
+│   ├── milestone-service.ts
+│   ├── prestige-service.ts
+│   └── prestige-upgrade-service.ts
+├── app.config.ts        # Application configuration
+├── app.routes.ts        # Route definitions
+└── app.ts              # Root component
+```
+
+### Components
+
+Components are standalone and co-located with their templates:
+
+<CodeGroup>
+```typescript src/app/components/navbar/navbar.ts
+import { Component } from '@angular/core';
+
+@Component({
+  selector: 'app-navbar',
+  standalone: true,
+  templateUrl: './navbar.html',
+  styleUrl: './navbar.css'
+})
+export class NavbarComponent {
+  // Component logic
+}
+```
+
+```html src/app/components/navbar/navbar.html
+<nav>
+  <!-- Template -->
+</nav>
+```
+</CodeGroup>
+
+<Note>
+  All components use the `standalone: true` flag, eliminating the need for NgModules.
+</Note>
+
+### Models
+
+TypeScript interfaces define the shape of data throughout the application:
+
+```typescript src/app/models/character.model.ts
+export interface Character {
+  id: string;
+  name: string;
+  level: number;
+  baseStrength: number;
+  baseIntelligence: number;
+  baseEndurance: number;
+  strengthModifier: number;
+  intelligenceModifier: number;
+  enduranceModifier: number;
+  prestigeLevel: number;
+  prestigeMultipliers: {
+    strength: number;
+    intelligence: number;
+    endurance: number;
+  };
+  prestigeCores: number;
+  gold: number;
+  currentStage: number;
+  currentWave: number;
+  createdAt: Date;
+  lastActiveAt: Date;
+}
+```
+
+### Services
+
+Services handle business logic and state management using Angular signals. All services use the `providedIn: 'root'` pattern for singleton behavior:
+
+```typescript src/app/services/character-service.ts
+import { Injectable, signal } from '@angular/core';
+
+@Injectable({
+  providedIn: 'root',
+})
+export class CharacterService {
+  character = signal<Character>(this.returnDefaultCharacter());
+  
+  // Service methods
+}
+```
+
+Key services:
+
+- **CharacterService** - Manages character state and progression (src/app/services/character-service.ts:9)
+- **GameStateService** - Orchestrates overall game state (src/app/services/gamestate-service.ts:16)
+- **AutoSaveService** - Handles periodic state persistence (src/app/services/autosave-service.ts:15)
+- **ClerkAuthService** - Integrates Clerk authentication with Convex (src/app/services/clerk-auth.service.ts:8)
+
+### Pages
+
+Pages are route-level components that compose smaller components:
+
+```
+pages/
+├── auth/login/          # Authentication page
+├── campaign/            # Campaign progression
+├── character/           # Character management
+├── dashboard/           # Main dashboard
+└── milestones/          # Milestone tracking
+    └── components/      # Page-specific components
+        └── milestone-card/
+```
+
+<Info>
+  Page-specific components are nested under their parent page directory to maintain clear ownership.
+</Info>
+
+### Configuration files
+
+**app.config.ts** - Application-level providers and configuration:
+
+```typescript src/app/app.config.ts
+import { ApplicationConfig } from '@angular/core';
+import { provideRouter } from '@angular/router';
+import { provideConvex, provideClerkAuth } from 'convex-angular';
+
+export const appConfig: ApplicationConfig = {
+  providers: [
+    provideRouter(routes),
+    provideConvex(environment.convexPublicUrl),
+    { provide: CLERK_AUTH, useClass: ClerkAuthService },
+    provideClerkAuth(),
+  ],
+};
+```
+
+**app.routes.ts** - Application routing:
+
+```typescript src/app/app.routes.ts
+import { Routes } from '@angular/router';
+import { ConvexAuthGuard } from 'convex-angular';
+
+export const routes: Routes = [
+  {
+    path: 'dashboard',
+    component: DashboardComponent,
+    canActivate: [ConvexAuthGuard]
+  },
+  // More routes...
+];
+```
+
+## Backend directory (`convex/`)
+
+Convex backend functions and schema:
+
+```
+convex/
+├── _generated/          # Auto-generated types (do not edit)
+│   ├── api.d.ts
+│   ├── api.js
+│   ├── dataModel.d.ts
+│   ├── server.d.ts
+│   └── server.js
+├── lib/                 # Shared utilities
+│   └── auth.ts
+├── auth.config.ts       # Authentication configuration
+├── schema.ts           # Database schema
+├── users.ts            # User management functions
+├── character.ts        # Character CRUD operations
+├── goldUpgrades.ts     # Gold upgrade functions
+└── prestigeUpgrades.ts # Prestige upgrade functions
+```
+
+### Schema definition
+
+The Convex schema defines all database tables:
+
+```typescript convex/schema.ts
+import { defineSchema, defineTable } from 'convex/server';
+import { v } from 'convex/values';
+
+export default defineSchema({
+  users: defineTable({
+    name: v.string(),
+    tokenIdentifier: v.string(),
+  }).index('by_token', ['tokenIdentifier']),
+  
+  character: defineTable({
+    id: v.string(),
+    userId: v.id('users'),
+    prestigeLevel: v.number(),
+    prestigeMultipliers: v.object({
+      strength: v.number(),
+      intelligence: v.number(),
+      endurance: v.number(),
+    }),
+    prestigeCores: v.number(),
+    gold: v.number(),
+    currentStage: v.number(),
+    currentWave: v.number(),
+  })
+    .index('by_user', ['userId'])
+    .index('by_user_and_id', ['userId', 'id']),
+});
+```
+
+### Backend functions
+
+Convex functions are organized by domain:
+
+- **users.ts** - User creation and management
+- **character.ts** - Character queries and mutations (convex/character.ts:1)
+- **goldUpgrades.ts** - Gold upgrade persistence (convex/goldUpgrades.ts:1)
+- **prestigeUpgrades.ts** - Prestige upgrade persistence
+
+## Configuration files
+
+### Angular configuration
+
+**angular.json** - Defines build and serve configurations:
+
+```json
+{
+  "schematics": {
+    "@schematics/angular:component": {
+      "skipTests": true,
+      "inlineStyle": true,
+      "standalone": true
+    }
+  },
+  "architect": {
+    "build": {
+      "configurations": {
+        "production": {
+          "budgets": [
+            {
+              "type": "initial",
+              "maximumWarning": "500kB",
+              "maximumError": "1MB"
+            }
+          ]
+        },
+        "development": {
+          "fileReplacements": [
+            {
+              "replace": "src/environments/environment.ts",
+              "with": "src/environments/environment.development.ts"
+            }
+          ]
+        }
+      }
+    }
+  }
+}
+```
+
+### Package management
+
+**package.json** - Dependencies and scripts:
+
+```json
+{
+  "name": "kaizen",
+  "dependencies": {
+    "@angular/core": "^21.0.8",
+    "@clerk/clerk-js": "^5.119.1",
+    "convex": "^1.31.4",
+    "convex-angular": "^1.0.0",
+    "primeng": "^21.0.2",
+    "tailwindcss": "^4.1.18"
+  }
+}
+```
+
+**pnpm-workspace.yaml** - Monorepo configuration for pnpm
+
+## File naming conventions
+
+Kaizen follows these naming conventions:
+
+- **Components**: `component-name.ts` (TypeScript file only, no `.component` suffix)
+- **Services**: `service-name.service.ts` (includes `.service` suffix)
+- **Models**: `model-name.model.ts` (includes `.model` suffix)
+- **Templates**: `component-name.html` (co-located with component)
+- **Styles**: `component-name.css` (co-located with component)
+
+<Warning>
+  The project intentionally omits the `.component` suffix from component filenames. This is a project-specific convention.
+</Warning>
+
+## Best practices
+
+<AccordionGroup>
+  <Accordion title="Component organization">
+    - Keep components focused on presentation
+    - Move business logic to services
+    - Use standalone components exclusively
+    - Co-locate templates and styles with component files
+  </Accordion>
+
+  <Accordion title="Service organization">
+    - One service per domain concern
+    - Use signals for reactive state
+    - Keep services testable by avoiding constructor side effects
+    - Use dependency injection for all service dependencies
+  </Accordion>
+
+  <Accordion title="Backend organization">
+    - One file per database table
+    - Use the `lib/` directory for shared utilities
+    - Keep authentication logic in `lib/auth.ts`
+    - Export queries and mutations explicitly
+  </Accordion>
+</AccordionGroup>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="State management" icon="signal" href="/development/state-management">
+    Learn how signals manage application state
+  </Card>
+  
+  <Card title="Backend integration" icon="database" href="/development/backend-integration">
+    Understand Convex integration patterns
+  </Card>
+</CardGroup>

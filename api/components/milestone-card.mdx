@@ -1,0 +1,126 @@
+---
+title: MilestoneCard component
+description: Card component displaying milestone details with unlock functionality
+---
+
+## Overview
+
+The `MilestoneCard` component displays information about a character milestone, including its level, reward, and requirements. It provides an unlock button that emits an event when clicked.
+
+## Component metadata
+
+- **Selector**: `app-milestone-card`
+- **Source**: `/src/app/pages/milestones/components/milestone-card/milestone-card.ts`
+- **Standalone**: Yes (uses imports array)
+
+## Template structure
+
+The card displays milestone information in a vertical layout:
+
+```html
+<div class="flex items-center flex-col">
+  <p class="text-xl font-bold">Level {{ milestone().level }}</p>
+  <p>
+    Reward: <span class="font-bold"> +{{ milestone().reward }} {{ milestone().type }} </span>
+  </p>
+  <div class="flex flex-col items-center mt-3">
+    <p>Requirement:</p>
+    <p>{{ milestone().requirement }}</p>
+  </div>
+  <button
+    class="bg-blue-300 text-blue-950 font-bold text-xl py-4 px-8 rounded-lg mt-5"
+    (click)="onUnlockClick()"
+  >
+    Unlock Level
+  </button>
+</div>
+```
+
+## Inputs
+
+<ParamField path="milestone" type="Milestone" required>
+  The milestone object to display. Must include level, reward, type, and requirement properties.
+</ParamField>
+
+### Milestone interface
+
+```typescript
+interface Milestone {
+  id: string;
+  type: 'Strength' | 'Intelligence' | 'Endurance';
+  requirement: string;
+  reward: number;
+  achieved: boolean;
+  achievedAt?: Date;
+  level: number;
+}
+```
+
+## Outputs
+
+<ParamField path="unlockMilestone" type="EventEmitter<Milestone>">
+  Emitted when the unlock button is clicked, passing the milestone object.
+</ParamField>
+
+## Methods
+
+### onUnlockClick()
+
+Internal method that emits the `unlockMilestone` output event with the current milestone.
+
+```typescript
+onUnlockClick() {
+  this.unlockMilestone.emit(this.milestone());
+}
+```
+
+## Usage
+
+```typescript
+import { MilestoneCard } from './components/milestone-card/milestone-card';
+import { Milestone } from './models/milestone.model';
+
+@Component({
+  selector: 'app-milestones-page',
+  imports: [MilestoneCard],
+  template: `
+    @for (milestone of milestones; track milestone.id) {
+      <app-milestone-card
+        [milestone]="milestone"
+        (unlockMilestone)="handleUnlock($event)"
+      />
+    }
+  `
+})
+export class MilestonesPage {
+  milestones: Milestone[] = [];
+
+  handleUnlock(milestone: Milestone) {
+    console.log('Unlocking milestone:', milestone.id);
+    // Handle unlock logic
+  }
+}
+```
+
+## Example
+
+```typescript
+const milestone: Milestone = {
+  id: 'str-1',
+  type: 'Strength',
+  requirement: 'Defeat 10 enemies',
+  reward: 5,
+  achieved: false,
+  level: 1
+};
+```
+
+When rendered, this displays:
+- **Level 1** as the heading
+- **Reward: +5 Strength** showing the stat bonus
+- **Requirement: Defeat 10 enemies** explaining what's needed
+- An "Unlock Level" button that emits the milestone when clicked
+
+<Info>
+  The component uses Angular's signal-based inputs with `input.required()`, ensuring type safety and requiring the milestone property to be provided.
+</Info>

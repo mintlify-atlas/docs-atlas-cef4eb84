@@ -1,0 +1,340 @@
+---
+title: Character progression
+description: Understand character stats, leveling mechanics, and how prestige affects your hero in Kaizen
+---
+
+Character progression in Kaizen revolves around base stats, modifiers, and prestige multipliers that persist across resets.
+
+## Character model
+
+The `Character` interface defines all character properties:
+
+```typescript
+export interface Character {
+  id: string;
+  name: string;
+  level: number;
+
+  baseStrength: number;
+  baseIntelligence: number;
+  baseEndurance: number;
+
+  strengthModifier: number;
+  intelligenceModifier: number;
+  enduranceModifier: number;
+
+  prestigeLevel: number;
+  prestigeMultipliers: {
+    strength: number;
+    intelligence: number;
+    endurance: number;
+  };
+  prestigeCores: number;
+
+  gold: number;
+
+  currentStage: number;
+  currentWave: number;
+
+  createdAt: Date;
+  lastActiveAt: Date;
+}
+```
+
+## Base stats
+
+Every character starts with three core stats that form the foundation of combat power.
+
+<Tabs>
+  <Tab title="Strength">
+    **Base strength** determines your damage output. The damage formula uses:
+    
+    ```typescript
+    (character.baseStrength + flatBoosts) *
+      character.strengthModifier *
+      character.prestigeMultipliers.strength *
+      character.prestigeLevel
+    ```
+    
+    Default starting value: **1**
+  </Tab>
+  <Tab title="Intelligence">
+    **Base intelligence** is currently defined but not used in combat calculations. It may be reserved for future magic or skill-based mechanics.
+    
+    Default starting value: **1**
+  </Tab>
+  <Tab title="Endurance">
+    **Base endurance** is currently defined but not used in combat calculations. It may be reserved for future defense or survival mechanics.
+    
+    Default starting value: **1**
+  </Tab>
+</Tabs>
+
+<Info>
+Currently, only **Strength** actively affects gameplay through damage calculation. Intelligence and Endurance are included in the character model for future features.
+</Info>
+
+## Stat modifiers
+
+Each base stat has an associated modifier that provides multiplicative scaling:
+
+- `strengthModifier`: Multiplies base strength
+- `intelligenceModifier`: Multiplies base intelligence  
+- `enduranceModifier`: Multiplies base endurance
+
+All modifiers start at **1.0** (100%).
+
+<Note>
+Modifiers are separate from prestige multipliers and can be adjusted independently for different game mechanics.
+</Note>
+
+## Default character
+
+When creating a new character, these are the initial values from `returnDefaultCharacter()` (line 78):
+
+```typescript
+private returnDefaultCharacter(): Character {
+  return {
+    id: '1',
+    name: 'Hero',
+    level: 1,
+    baseStrength: 1,
+    baseIntelligence: 1,
+    baseEndurance: 1,
+    strengthModifier: 1,
+    intelligenceModifier: 1,
+    enduranceModifier: 1,
+    prestigeLevel: 1,
+    prestigeMultipliers: {
+      strength: 1,
+      intelligence: 1,
+      endurance: 1,
+    },
+    prestigeCores: 0,
+    gold: 0,
+    currentStage: 1,
+    currentWave: 1,
+    createdAt: new Date(),
+    lastActiveAt: new Date(),
+  };
+}
+```
+
+## Modifying stats
+
+The `CharacterService` provides methods to modify character stats:
+
+### Stat modification
+
+```typescript
+modifyStat(
+  stat: keyof Pick<
+    Character,
+    | 'level'
+    | 'baseStrength'
+    | 'baseIntelligence'
+    | 'baseEndurance'
+    | 'gold'
+    | 'prestigeLevel'
+    | 'prestigeCores'
+  >,
+  amount: number,
+) {
+  const currentValue = this.character()[stat];
+  const newValue = currentValue + amount;
+  if (newValue >= 0) {
+    this.character.update((char) => ({ ...char, [stat]: newValue }));
+  }
+}
+```
+
+<Warning>
+Stats can only be modified if the resulting value is **non-negative**. You cannot reduce a stat below 0.
+</Warning>
+
+### Currency spending
+
+Specialized methods handle spending currencies:
+
+<Accordion title="Spending prestige cores">
+```typescript
+spendPrestigeCores(cost: number) {
+  this.character.update((char) => ({
+    ...char,
+    prestigeCores: char.prestigeCores - cost,
+  }));
+}
+```
+
+Used by the `PrestigeUpgradeService` when purchasing prestige upgrades.
+</Accordion>
+
+<Accordion title="Spending gold">
+```typescript
+spendGold(cost: number) {
+  this.character.update((char) => ({
+    ...char,
+    gold: char.gold - cost,
+  }));
+}
+```
+
+Used by the `GoldUpgradeService` when purchasing gold upgrades.
+</Accordion>
+
+## Prestige properties
+
+Several character properties are specifically related to the prestige system:
+
+### Prestige level
+
+`prestigeLevel` starts at **1** and increases by **1** each time you prestige. This value is a direct multiplier in the damage formula:
+
+```typescript
+damage = baseCalculation * character.prestigeLevel;
+```
+
+<Tip>
+Prestige level provides a **permanent, linear scaling** to your damage. Prestiging 10 times gives you 11x damage from this multiplier alone!
+</Tip>
+
+### Prestige multipliers
+
+The `prestigeMultipliers` object contains separate multipliers for each stat:
+
+```typescript
+prestigeMultipliers: {
+  strength: 1,
+  intelligence: 1,
+  endurance: 1,
+}
+```
+
+These are applied in the damage calculation:
+
+```typescript
+damage *= character.prestigeMultipliers.strength;
+```
+
+<Info>
+Currently, prestige multipliers default to 1.0 and are not modified by the prestige system. They may be used for future prestige-based stat bonuses.
+</Info>
+
+### Prestige cores
+
+`prestigeCores` is the currency earned from prestiging. Cores can be:
+- Spent on prestige upgrades
+- Kept unspent to benefit from "Hoarded Power" upgrade (+2% DPS per unused core)
+
+See the [prestige system](/mechanics/prestige-system) page for core calculation details.
+
+## Wave and stage tracking
+
+Progression through the game is tracked via two properties:
+
+- `currentStage`: The major progression marker (1, 2, 3, ...)
+- `currentWave`: The minor progression marker within a stage (1-10)
+
+### Advancing waves
+
+From `advanceWave()` (line 104):
+
+```typescript
+advanceWave() {
+  this.character.update((char) => ({
+    ...char,
+    currentWave: char.currentWave < 10 ? char.currentWave + 1 : 1,
+    currentStage: char.currentWave === 10 ? char.currentStage + 1 : char.currentStage,
+  }));
+}
+```
+
+**Logic:**
+- If wave < 10: Increment wave
+- If wave = 10: Reset to wave 1 and increment stage
+
+<Note>
+Your current stage and wave affect enemy HP scaling and gold rewards. Higher stages mean exponentially tougher enemies but better gold income.
+</Note>
+
+## Character reset on prestige
+
+When you prestige, most stats are reset while prestige-related properties are preserved:
+
+```typescript
+resetCharacter() {
+  const currentChar = this.character();
+
+  this.character.set({
+    id: '1',
+    name: 'Hero',
+    level: 1,
+    baseStrength: 1,
+    baseIntelligence: 1,
+    baseEndurance: 1,
+    strengthModifier: 1,
+    intelligenceModifier: 1,
+    enduranceModifier: 1,
+    prestigeLevel: currentChar.prestigeLevel, // Preserved
+    prestigeMultipliers: currentChar.prestigeMultipliers, // Preserved
+    prestigeCores: currentChar.prestigeCores, // Preserved
+    gold: currentChar.gold, // Preserved
+    currentStage: 1,
+    currentWave: 1,
+    createdAt: new Date(),
+    lastActiveAt: new Date(),
+  });
+}
+```
+
+<Warning>
+Prestiging resets your stage and wave progress back to 1-1, but you keep your gold, prestige level, prestige cores, and multipliers.
+</Warning>
+
+## State persistence
+
+Character state is persisted to the database via Convex:
+
+```typescript
+public updateDatabase(): void {
+  const characterToSave = {
+    id: this.character().id,
+    prestigeLevel: this.character().prestigeLevel,
+    prestigeMultipliers: this.character().prestigeMultipliers,
+    prestigeCores: this.character().prestigeCores,
+    gold: this.character().gold,
+    currentStage: this.character().currentStage,
+    currentWave: this.character().currentWave,
+  };
+  this.databaseUpdateMutation.mutate(characterToSave);
+}
+```
+
+<Info>
+Only prestige-related properties and progression are saved to the database. Base stats and modifiers are derived from defaults and upgrades.
+</Info>
+
+## Character loading
+
+On initialization, character data is loaded from the database and merged with defaults:
+
+```typescript
+effect(() => {
+  const dbCharacter = this.getCharacterFromDatabase.data();
+  if (!dbCharacter) return;
+  if (this.hasLoadedFromDb()) {
+    this.character.update((char) => ({
+      ...char,
+      ...dbCharacter,
+    }));
+  } else {
+    const merged = { ...defaultCharacter, ...dbCharacter };
+    this.character.set(merged);
+    this.hasLoadedFromDb.set(true);
+  }
+});
+```
+
+<Tip>
+Database properties override defaults, ensuring your progression is preserved across sessions.
+</Tip>

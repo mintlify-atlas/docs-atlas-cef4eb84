@@ -1,0 +1,525 @@
+---
+title: Upgrade systems
+description: Learn about gold and prestige upgrade mechanics, including cost scaling, effect calculation, and available upgrades
+---
+
+Kaizen features two parallel upgrade systems: gold upgrades for temporary progression within a run, and prestige upgrades for permanent bonuses across prestiges.
+
+## Upgrade architecture
+
+Both upgrade systems extend the `BaseUpgradeService<T>` abstract class, sharing core functionality.
+
+### Upgrade interface
+
+All upgrades follow this structure:
+
+```typescript
+export interface Upgrade {
+  id: string;
+  name: string;
+  description: string;
+
+  baseCost: number;
+  costScaling: number;
+
+  effectType: UpgradeEffectType;
+  effectValue: number;
+  effectScaling: UpgradeScalingType;
+
+  currentLevel: number;
+}
+```
+
+### Effect types
+
+```typescript
+export enum UpgradeEffectType {
+  FLAT_STAT_BOOST = 'flat_stat_boost',
+  MULTIPLIER_BOOST = 'multiplier_boost',
+  ATTACK_SPEED = 'attack_speed',
+  ENEMY_HEALTH_REDUCTION = 'enemy_health_reduction',
+  DYNAMIC_PER_CORE = 'dynamic_per_core',
+  CRITICAL_CHANCE_BOOST = 'critical_chance_boost',
+  CRITICAL_DAMAGE_BOOST = 'critical_damage_boost',
+}
+```
+
+### Scaling types
+
+```typescript
+export enum UpgradeScalingType {
+  LINEAR = 'linear',
+  EXPONENTIAL = 'exponential',
+  FIXED_PER_LEVEL = 'fixed_per_level',
+}
+```
+
+## Cost calculation
+
+All upgrade costs scale exponentially based on current level.
+
+### Cost formula
+
+From `BaseUpgradeService.calculateCost()` (line 45):
+
+```typescript
+calculateCost(upgrade: T & { baseCost: number; costScaling: number }): number {
+  return Math.floor(upgrade.baseCost * Math.pow(upgrade.costScaling, upgrade.currentLevel));
+}
+```
+
+**Formula:** `cost = floor(baseCost × costScaling^currentLevel)`
+
+<Warning>
+Upgrade costs increase exponentially! An upgrade with 1.5x scaling costs **7.6x more** at level 10 than at level 1.
+</Warning>
+
+### Cost examples
+
+<Accordion title="1.3x scaling (Noob Gains)">
+| Level | Cost |
+|-------|------|
+| 0     | 1    |
+| 1     | 1    |
+| 5     | 3    |
+| 10    | 13   |
+| 20    | 190  |
+</Accordion>
+
+<Accordion title="1.5x scaling (Professional Kaizen Trainer)">
+| Level | Cost  |
+|-------|-------|
+| 0     | 10    |
+| 1     | 15    |
+| 5     | 75    |
+| 10    | 576   |
+| 20    | 33,247|
+</Accordion>
+
+<Accordion title="2.0x scaling (Swift Strikes)">
+| Level | Cost    |
+|-------|----------|
+| 0     | 1       |
+| 1     | 2       |
+| 5     | 32      |
+| 10    | 1,024   |
+| 20    | 1,048,576|
+</Accordion>
+
+## Effect calculation
+
+Effect scaling determines how upgrade power increases with level.
+
+### Scaling formulas
+
+From `BaseUpgradeService.calculateEffect()` (line 83):
+
+```typescript
+calculateEffect(upgrade: any): number {
+  switch (upgrade.effectScaling) {
+    case 'linear':
+      return upgrade.effectValue * upgrade.currentLevel;
+    case 'exponential':
+      return Math.pow(upgrade.effectValue, upgrade.currentLevel);
+    case 'fixed_per_level':
+      return upgrade.effectValue * (upgrade.currentLevel > 0 ? 1 : 0);
+    default:
+      return 0;
+  }
+}
+```
+
+<Tabs>
+  <Tab title="Linear">
+    Effect increases by a fixed amount per level:
+    
+    `effect = effectValue × currentLevel`
+    
+    Example: +1 strength per level
+    - Level 1: +1
+    - Level 5: +5
+    - Level 10: +10
+  </Tab>
+  <Tab title="Exponential">
+    Effect multiplies exponentially:
+    
+    `effect = effectValue^currentLevel`
+    
+    <Warning>
+    Currently, no upgrades use exponential scaling. This creates extremely rapid power growth.
+    </Warning>
+  </Tab>
+  <Tab title="Fixed per level">
+    Effect is either 0 or a fixed value:
+    
+    `effect = effectValue × (level > 0 ? 1 : 0)`
+    
+    Used for binary unlock mechanics (have the upgrade or don't).
+  </Tab>
+</Tabs>
+
+## Purchasing upgrades
+
+The purchase flow validates currency and applies the upgrade.
+
+### Purchase logic
+
+```typescript
+purchaseUpgrade(upgradeID: string): boolean {
+  if (!this.canPurchase(upgradeID)) return false;
+
+  const upgrade = this.getUpgradeByID(upgradeID) as any;
+  const cost = this.calculateCost(upgrade);
+  this.spendCurrency(cost);
+  this.upgrades.update((upgrades) =>
+    upgrades.map((u) => (u.id === upgradeID ? { ...u, currentLevel: u.currentLevel + 1 } : u)),
+  );
+  return true;
+}
+```
+
+**Process:**
+1. Check if player can afford the upgrade
+2. Calculate exact cost
+3. Deduct currency
+4. Increment upgrade level by 1
+5. Return success status
+
+<Info>
+Purchasing an upgrade immediately recalculates its cost for the next level due to the exponential formula.
+</Info>
+
+## Total effect calculation
+
+Multiple upgrades can have the same effect type, and their effects stack additively.
+
+```typescript
+getTotalEffect(effectType: UpgradeEffectType): number {
+  return this.upgrades()
+    .filter((u: T) => u.effectType === effectType)
+    .reduce((total, upgrade) => {
+      return total + this.calculateEffect(upgrade);
+    }, 0);
+}
+```
+
+<Tip>
+If you have two upgrades that both provide `FLAT_STAT_BOOST`, their effects are **added together** before being applied to damage.
+</Tip>
+
+## Gold upgrades
+
+Gold upgrades are purchased with gold earned from combat and reset when you prestige.
+
+### Gold upgrade service
+
+From `GoldUpgradeService` (line 11):
+
+```typescript
+export class GoldUpgradeService extends BaseUpgradeService<Upgrade> {
+  protected override getCurrentCurrency(): number {
+    return this.characterService.character().gold;
+  }
+
+  protected override spendCurrency(amount: number) {
+    this.characterService.spendGold(amount);
+  }
+}
+```
+
+### Available gold upgrades
+
+<Accordion title="Noob Gains">
+**Cost:** 1 gold (1.3x scaling)
+
+**Effect:** +1 strength per level (linear)
+
+**Effect type:** `FLAT_STAT_BOOST`
+
+```typescript
+{
+  id: 'gold_strength_flat',
+  name: 'Noob Gains',
+  description: 'Gain 1 Strength per Level',
+  baseCost: 1,
+  costScaling: 1.3,
+  effectType: UpgradeEffectType.FLAT_STAT_BOOST,
+  effectValue: 1,
+  effectScaling: UpgradeScalingType.LINEAR,
+}
+```
+
+At level 10: +10 strength for ~100 total gold invested
+</Accordion>
+
+<Accordion title="Professional Kaizen Trainer">
+**Cost:** 10 gold (1.5x scaling)
+
+**Effect:** +10 strength per level (linear)
+
+**Effect type:** `FLAT_STAT_BOOST`
+
+```typescript
+{
+  id: 'gold_strength_stronger',
+  name: 'Professional Kaizen Trainer',
+  description: 'Gain 10 Strength per Level',
+  baseCost: 10,
+  costScaling: 1.5,
+  effectType: UpgradeEffectType.FLAT_STAT_BOOST,
+  effectValue: 10,
+  effectScaling: UpgradeScalingType.LINEAR,
+}
+```
+
+At level 10: +100 strength for ~5,000 total gold invested
+</Accordion>
+
+<Accordion title="KaaChow Statue">
+**Cost:** 50 gold (1.2x scaling)
+
+**Effect:** +1% critical chance per level (linear, additive)
+
+**Effect type:** `CRITICAL_CHANCE_BOOST`
+
+```typescript
+{
+  id: 'gold_critical_chance_basic',
+  name: 'KaaChow Statue',
+  description: 'Gain 1% additive Critical Chance per Level',
+  baseCost: 50,
+  costScaling: 1.2,
+  effectType: UpgradeEffectType.CRITICAL_CHANCE_BOOST,
+  effectValue: 0.01,
+  effectScaling: UpgradeScalingType.LINEAR,
+}
+```
+
+Base crit chance is 10%. At level 10: 20% crit chance
+</Accordion>
+
+<Accordion title="Heavy Hitter">
+**Cost:** 50 gold (1.2x scaling)
+
+**Effect:** +5% critical damage per level (linear, additive)
+
+**Effect type:** `CRITICAL_DAMAGE_BOOST`
+
+```typescript
+{
+  id: 'gold_critical_damage_basic',
+  name: 'Heavy Hitter',
+  description: 'Gain 5% additive Critical Damage per Level',
+  baseCost: 50,
+  costScaling: 1.2,
+  effectType: UpgradeEffectType.CRITICAL_DAMAGE_BOOST,
+  effectValue: 0.05,
+  effectScaling: UpgradeScalingType.LINEAR,
+}
+```
+
+Base crit damage is 2x. At level 10: 2.5x crit damage
+</Accordion>
+
+<Note>
+Gold upgrade levels are saved to the database and persist between sessions, but they don't provide bonuses after prestiging since your stats reset.
+</Note>
+
+## Prestige upgrades
+
+Prestige upgrades are purchased with prestige cores and provide **permanent** bonuses that persist across all prestiges.
+
+### Prestige upgrade service
+
+From `PrestigeUpgradeService` (line 10):
+
+```typescript
+export class PrestigeUpgradeService extends BaseUpgradeService<Upgrade> {
+  protected override getCurrentCurrency(): number {
+    return this.characterService.character().prestigeCores;
+  }
+
+  protected override spendCurrency(amount: number): void {
+    this.characterService.spendPrestigeCores(amount);
+  }
+}
+```
+
+### Available prestige upgrades
+
+<Accordion title="Swift Strikes">
+**Cost:** 1 core (2.0x scaling)
+
+**Effect:** -5% attack interval per level (linear)
+
+**Effect type:** `ATTACK_SPEED`
+
+```typescript
+{
+  id: 'attack_speed_boost',
+  name: 'Swift Strikes',
+  description: 'Reduce attack interval by 5% per Level',
+  baseCost: 1,
+  costScaling: 2,
+  effectType: UpgradeEffectType.ATTACK_SPEED,
+  effectValue: 0.05,
+  effectScaling: UpgradeScalingType.LINEAR,
+}
+```
+
+At level 10: 50% faster attacks (attack every 500ms instead of 1000ms)
+</Accordion>
+
+<Accordion title="Titan's Power">
+**Cost:** 1 core (1.8x scaling)
+
+**Effect:** +1 strength per level (linear)
+
+**Effect type:** `FLAT_STAT_BOOST`
+
+```typescript
+{
+  id: 'strength_multiplier',
+  name: 'Titans Power',
+  description: 'Increase strength by 1 per Level',
+  baseCost: 1,
+  costScaling: 1.8,
+  effectType: UpgradeEffectType.FLAT_STAT_BOOST,
+  effectValue: 1,
+  effectScaling: UpgradeScalingType.LINEAR,
+}
+```
+
+Provides permanent flat strength that carries across prestiges
+</Accordion>
+
+<Accordion title="Kaizen Mastery">
+**Cost:** 1 core (2.0x scaling)
+
+**Effect:** +10% prestige core gain per level (linear, multiplicative)
+
+**Effect type:** `MULTIPLIER_BOOST`
+
+```typescript
+{
+  id: 'core_gain_boost',
+  name: 'Kaizen Mastery',
+  description: 'Increase Kaizen-Core gain by 10% per Level',
+  baseCost: 1,
+  costScaling: 2,
+  effectType: UpgradeEffectType.MULTIPLIER_BOOST,
+  effectValue: 0.1,
+  effectScaling: UpgradeScalingType.LINEAR,
+}
+```
+
+At level 10: 2x prestige core gain (100% bonus)
+
+Applied in the prestige calculation:
+```typescript
+const multiplier =
+  1 + this.prestigeUgpradeService.getTotalEffect(UpgradeEffectType.MULTIPLIER_BOOST);
+return Math.floor(prestigeCoreGain * multiplier);
+```
+</Accordion>
+
+<Accordion title="Fragile Foes">
+**Cost:** 1 core (1.6x scaling)
+
+**Effect:** -5% enemy health per level (linear)
+
+**Effect type:** `ENEMY_HEALTH_REDUCTION`
+
+```typescript
+{
+  id: 'enemy_health_reduction',
+  name: 'Fragile Foes',
+  description: 'Reduce enemy health by 5% per Level',
+  baseCost: 1,
+  costScaling: 1.6,
+  effectType: UpgradeEffectType.ENEMY_HEALTH_REDUCTION,
+  effectValue: 0.05,
+  effectScaling: UpgradeScalingType.LINEAR,
+}
+```
+
+At level 10: Enemies have 50% less health
+
+Applied after enemy HP calculation:
+```typescript
+enemyHP = Math.floor(enemyHP * (1 - healthReduction));
+```
+</Accordion>
+
+<Accordion title="Hoarded Power">
+**Cost:** 1 core (2.5x scaling)
+
+**Effect:** +2% DPS per unused prestige core per level (linear, dynamic)
+
+**Effect type:** `DYNAMIC_PER_CORE`
+
+```typescript
+{
+  id: 'dps_per_core',
+  name: 'Hoarded Power',
+  description: 'Gain %2 DPS per unused Kaizen-Core',
+  baseCost: 1,
+  costScaling: 2.5,
+  effectType: UpgradeEffectType.DYNAMIC_PER_CORE,
+  effectValue: 0.02,
+  effectScaling: UpgradeScalingType.LINEAR,
+}
+```
+
+At level 5 with 50 unused cores: `1 + (0.02 * 5 * 50) = 6x damage`
+
+Applied dynamically based on current unspent cores:
+```typescript
+const dpsPerCore = this.prestigeUpgradeService.getTotalEffect(
+  UpgradeEffectType.DYNAMIC_PER_CORE
+);
+const unusedCores = character.prestigeCores;
+damage *= 1 + dpsPerCore * unusedCores;
+```
+
+<Warning>
+This upgrade creates a strategic trade-off: spend cores on other upgrades, or keep them for immediate power?
+</Warning>
+</Accordion>
+
+## Upgrade persistence
+
+Both upgrade systems save to the database but behave differently on prestige:
+
+<Tabs>
+  <Tab title="Gold upgrades">
+    Gold upgrade levels are saved but become ineffective after prestige since your character resets to stage 1-1.
+    
+    The levels persist so you can see your previous progress, but you'll need to re-purchase them each prestige cycle to benefit from them.
+  </Tab>
+  <Tab title="Prestige upgrades">
+    Prestige upgrade levels are saved and **permanently active**. Once purchased, they apply to all current and future prestige cycles.
+    
+    These never reset and provide increasing returns as you level them up.
+  </Tab>
+</Tabs>
+
+### Database update
+
+Both services implement database persistence:
+
+```typescript
+public override updateDatabase(): void {
+  const upgradesToSave: { id: string; currentLevel: number }[] = this.upgrades().map(
+    (upgrade) => ({
+      id: upgrade.id,
+      currentLevel: upgrade.currentLevel,
+    }),
+  );
+  this.databaseUpdateMutation.mutate({ upgrades: upgradesToSave });
+}
+```
+
+<Info>
+Only upgrade IDs and current levels are saved to the database. Definitions (costs, effects, descriptions) are stored in code.
+</Info>
