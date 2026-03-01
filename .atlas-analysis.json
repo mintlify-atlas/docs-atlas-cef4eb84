@@ -1,0 +1,101 @@
+{
+  "projectType": "frontend",
+  "projectName": "Kaizen",
+  "projectDescription": "An incremental idle game built with Angular 21, featuring character progression, prestige systems, and real-time state persistence.",
+  "theme": "almond",
+  "primaryColor": "#8B5CF6",
+  "lightColor": "#A78BFA",
+  "darkColor": "#6D28D9",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "architecture"
+            ]
+          },
+          {
+            "group": "Game Mechanics",
+            "pages": [
+              "mechanics/combat",
+              "mechanics/character-progression",
+              "mechanics/prestige-system",
+              "mechanics/upgrades",
+              "mechanics/milestones"
+            ]
+          },
+          {
+            "group": "Development",
+            "pages": [
+              "development/setup",
+              "development/project-structure",
+              "development/state-management",
+              "development/backend-integration"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Services",
+            "pages": [
+              "api/services/character-service",
+              "api/services/combat-service",
+              "api/services/prestige-service",
+              "api/services/upgrade-services",
+              "api/services/gamestate-service"
+            ]
+          },
+          {
+            "group": "Models",
+            "pages": [
+              "api/models/character",
+              "api/models/upgrade",
+              "api/models/milestone"
+            ]
+          },
+          {
+            "group": "Components",
+            "pages": [
+              "api/components/navbar",
+              "api/components/milestone-card",
+              "api/components/prestige-upgrade-card"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Incremental idle game mechanics with auto-combat",
+    "Character progression with multi-stat system",
+    "Prestige system with cores and multipliers",
+    "Dual upgrade systems (gold and prestige)",
+    "Milestone achievements",
+    "Real-time state persistence via Convex",
+    "User authentication with Clerk",
+    "Angular 21 with standalone components"
+  ],
+  "publicApiSurface": [
+    "CharacterService",
+    "CombatService",
+    "PrestigeService",
+    "GoldUpgradeService",
+    "PrestigeUpgradeService",
+    "GameStateService",
+    "MilestoneService",
+    "AutoSaveService",
+    "Character interface",
+    "Upgrade interface",
+    "Milestone interface",
+    "UpgradeEffectType enum",
+    "UpgradeScalingType enum"
+  ]
+}
